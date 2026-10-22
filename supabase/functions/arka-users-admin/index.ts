@@ -28,6 +28,20 @@ const ROLES = new Set(["admin", "pengelola", "pimpinan"]);
 const UNITS = new Set(["umum_keuangan", "persidangan", "fasilitasi"]);
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: corsHeaders });
 
+async function findAuthUserByEmail(adminClient: ReturnType<typeof createClient>, email: string) {
+  const target = email.trim().toLowerCase();
+  const perPage = 100;
+  for (let page = 1; page <= 100; page++) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const users = data.users || [];
+    const found = users.find((u) => String(u.email || "").trim().toLowerCase() === target);
+    if (found) return found;
+    if (users.length < perPage) return null;
+  }
+  throw new Error("Pemeriksaan email berhenti karena jumlah akun melebihi batas pencarian. Periksa akun di Supabase Authentication.");
+}
+
 function validateProfile(input: Record<string, unknown>) {
   const email = String(input.email ?? "").trim().toLowerCase();
   const nama = String(input.nama ?? "").trim();
@@ -102,11 +116,48 @@ Deno.serve(async (req) => {
 
     if (action === "create") {
       const profile = validateProfile(body);
-      const inviteRedirect = Deno.env.get("ARKA_INVITE_REDIRECT_URL");
-      const options: { data: Record<string, unknown>; redirectTo?: string } = { data: { full_name: profile.nama, arka_invited: true } };
-      if (inviteRedirect) options.redirectTo = inviteRedirect;
-      const { data, error } = await adminClient.auth.admin.inviteUserByEmail(profile.email, options);
-      if (error) throw error;
+      // This installation uses dummy/test emails, so do not send an invitation.
+      // Auth creates the user with a confirmed email and an admin-supplied initial password.
+      const password = String(body.password ?? "");
+      if (password.length < 8 || password.length > 128) {
+        return json({ code: "PASSWORD_INVALID", error: "Password awal wajib 8–128 karakter." }, 400);
+      }
+      const existingAuthUser = await findAuthUserByEmail(adminClient, profile.email);
+      if (existingAuthUser) {
+        const { data: existingProfile, error: existingProfileError } = await adminClient
+          .from("profiles").select("id,nama,peran,unit").eq("id", existingAuthUser.id).maybeSingle();
+        if (existingProfileError) throw existingProfileError;
+        return json({
+          code: "EMAIL_ALREADY_EXISTS",
+          existingUserId: existingAuthUser.id,
+          error: `Email ${profile.email} sudah terdaftar di Supabase Authentication. Gunakan Edit pada akun yang sudah ada${existingProfile ? "." : "; akun ini belum memiliki profil akses."}`,
+        }, 409);
+      }
+
+      const { data, error } = await adminClient.auth.admin.createUser({
+        email: profile.email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: profile.nama, arka_managed: true },
+      });
+      if (error) {
+        const message = String(error.message || "Supabase Auth gagal membuat akun.");
+        const lower = message.toLowerCase();
+        if (/already registered|already exists|user already|email.*exists|duplicate/i.test(message)) {
+          return json({ code: "EMAIL_ALREADY_EXISTS", error: `Email ${profile.email} sudah terdaftar. Gunakan Edit pada akun yang sudah ada.` }, 409);
+        }
+        if (/email.*invalid|invalid.*email|email_address_invalid/i.test(message + " " + String(error.code || ""))) {
+          return json({
+            code: "EMAIL_INVALID",
+            error: `Supabase Auth menolak alamat email ${profile.email}. Email konfirmasi memang tidak dikirim, tetapi Auth tetap memerlukan alamat berformat valid. Periksa alamat atau aturan validasi email pada proyek Supabase. Detail: ${message}`,
+          }, 400);
+        }
+        if (/password.*(weak|short|length|characters)|weak password/i.test(lower)) {
+          return json({ code: "PASSWORD_INVALID", error: `Password awal ditolak oleh Supabase Auth. Gunakan password yang memenuhi kebijakan proyek. Detail: ${message}` }, 400);
+        }
+        const status = Number(error.status) >= 400 && Number(error.status) <= 599 ? Number(error.status) : 400;
+        return json({ code: error.code || "AUTH_CREATE_FAILED", error: `Supabase Auth gagal membuat akun tanpa email konfirmasi: ${message}` }, status);
+      }
       const newUser = data.user;
       if (!newUser?.id) throw new Error("Supabase tidak mengembalikan ID akun baru.");
       const { error: insertError } = await adminClient.from("profiles").upsert({
@@ -114,11 +165,15 @@ Deno.serve(async (req) => {
       });
       if (insertError) {
         const { error: rollbackError } = await adminClient.auth.admin.deleteUser(newUser.id);
-        if (rollbackError) console.error("Rollback akun undangan gagal:", rollbackError.message);
-        throw new Error("Akun undangan terbentuk, tetapi profil gagal disimpan: " + insertError.message);
+        if (rollbackError) console.error("Rollback akun gagal:", rollbackError.message);
+        throw new Error("Akun Authentication dibuat, tetapi profil gagal disimpan: " + insertError.message);
       }
-      await audit("TAMBAH", `${profile.email} (${profile.peran})`);
-      return json({ ok: true, user: { id: newUser.id, email: profile.email, ...profile } }, 201);
+      await audit("TAMBAH", `${profile.email} (${profile.peran}; tanpa email konfirmasi)`);
+      return json({
+        ok: true,
+        user: { id: newUser.id, email: profile.email, ...profile, email_confirmed_at: newUser.email_confirmed_at },
+        message: "Akun dibuat dengan email terkonfirmasi. Tidak ada email yang dikirim.",
+      }, 201);
     }
 
     if (action === "update") {
@@ -135,8 +190,10 @@ Deno.serve(async (req) => {
         if ((count ?? 0) <= 1) return json({ error: "Tidak dapat mengubah peran admin terakhir. Tetapkan admin pengganti terlebih dahulu." }, 409);
       }
       const oldEmail = existingUserData.user.email || "";
-      if (profile.email !== oldEmail) {
-        const { error } = await adminClient.auth.admin.updateUserById(id, { email: profile.email, email_confirm: true });
+      if (profile.email !== oldEmail || !existingUserData.user.email_confirmed_at) {
+        const authUpdate: { email?: string; email_confirm: boolean } = { email_confirm: true };
+        if (profile.email !== oldEmail) authUpdate.email = profile.email;
+        const { error } = await adminClient.auth.admin.updateUserById(id, authUpdate);
         if (error) throw error;
       }
       const { error: saveError } = await adminClient.from("profiles").upsert({
@@ -176,7 +233,25 @@ Deno.serve(async (req) => {
     return json({ error: "Aksi tidak dikenal. Gunakan list, create, update, atau delete." }, 400);
   } catch (error) {
     console.error("arka-users-admin error:", error);
-    const message = error instanceof Error ? error.message : "Kesalahan server tidak diketahui.";
-    return json({ error: message }, 400);
+    const e = error as { message?: string; status?: number; code?: string };
+    const message = error instanceof Error ? error.message : String(e?.message || "Kesalahan server tidak diketahui.");
+    const lower = message.toLowerCase();
+    const duplicate = /already registered|already exists|user already|email.*exists|duplicate key/i.test(message);
+    const invalidEmail = /email.*invalid|invalid.*email|email_address_invalid/i.test(message + " " + String(e?.code || ""));
+    const weakPassword = /password.*(weak|short|length|characters)|weak password/i.test(lower);
+    const rateLimit = /rate limit|too many requests/i.test(lower);
+    const status = duplicate ? 409 : (invalidEmail || weakPassword ? 400 : (rateLimit ? 429 : (Number(e?.status) >= 400 && Number(e?.status) <= 599 ? Number(e.status) : 400)));
+    const code = duplicate ? "EMAIL_ALREADY_EXISTS" : (invalidEmail ? "EMAIL_INVALID" : (weakPassword ? "PASSWORD_INVALID" : (rateLimit ? "AUTH_RATE_LIMIT" : (e?.code || "ARKA_REQUEST_FAILED"))));
+    const userMessage = duplicate
+      ? "Email sudah terdaftar di Supabase Authentication. Gunakan Edit pada akun yang sudah ada."
+      : invalidEmail
+        ? `Supabase Auth menolak format/alamat email. Tidak ada email konfirmasi yang dikirim, tetapi alamat tetap harus memenuhi validasi Auth. Detail: ${message}`
+        : weakPassword
+          ? `Password awal ditolak. Gunakan password sesuai kebijakan proyek. Detail: ${message}`
+          : rateLimit
+            ? `Permintaan dibatasi oleh Supabase. Tunggu sebelum mencoba lagi. Detail: ${message}`
+            : message;
+    return json({ error: userMessage, code }, status);
   }
+
 });
