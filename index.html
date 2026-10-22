@@ -142,11 +142,35 @@ body.collapsed #navq{display:none}
 /* ===== KONFIGURASI SUPABASE =====
    Isi dengan URL proyek dan anon public key (Project Settings > API).
    Jika kosong, aplikasi berjalan dengan data lokal (data contoh di memori). */
-const SUPABASE_URL = 'https://gsmrhrgcilzuelrorarr.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdzbXJocmdjaWx6dWVscm9yYXJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NjQzNTIsImV4cCI6MjEwODI0MDM1Mn0.esFusrZd8NAs6S7wNuT8Zsy9Smomdl31fOcJEzBCcCQ';
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase !== 'undefined');
-let ARKA_ROLE = null, ARKA_NAMA = '';
-const canWrite = () => !CLOUD || ['admin','operator'].includes(ARKA_ROLE);
+let ARKA_ROLE = null, ARKA_NAMA = '', ARKA_UNIT = null;
+/* Unit kerja sesuai Perbup Kapuas Hulu Nomor 57 Tahun 2021, Pasal 5 dan Lampiran */
+const UNITS = {
+  umum_keuangan: 'Bagian Umum dan Keuangan',
+  persidangan: 'Bagian Persidangan dan Perundang-undangan',
+  fasilitasi: 'Bagian Fasilitasi Penganggaran dan Pengawasan'
+};
+/* Unit yang mengelola (menulis) setiap modul. Dasar pasal: lihat KAMUS_DATA.md */
+const UNIT_MODUL = {
+  pegawai:'umum_keuangan', anggota:'umum_keuangan', komisi:'persidangan', fraksi:'umum_keuangan', alat:'persidangan', tenaga:'umum_keuangan', mitra:'fasilitasi',
+  program:'umum_keuangan', kegiatan:'umum_keuangan', subkegiatan:'umum_keuangan', sasaran:'umum_keuangan', iku:'umum_keuangan', iki:'umum_keuangan', regulasi:'persidangan',
+  rpjmd:'umum_keuangan', renstra:'umum_keuangan', renja:'umum_keuangan', cascading:'umum_keuangan', pohon:'umum_keuangan', perjanjian:'umum_keuangan', rencanaaksi:'umum_keuangan', ikuk:'umum_keuangan', ikik:'umum_keuangan', monitoring:'umum_keuangan', evaluasi:'umum_keuangan',
+  persuratan:'umum_keuangan', arsip:'umum_keuangan', perjalanan:'umum_keuangan', kepegawaian:'umum_keuangan', rumahtangga:'umum_keuangan', kendaraan:'umum_keuangan', anggaran:'umum_keuangan', spj:'umum_keuangan',
+  'aset-rencana':'umum_keuangan', inventaris:'umum_keuangan', pemeliharaan:'umum_keuangan', mutasi:'umum_keuangan', penghapusan:'umum_keuangan', rekonsiliasi:'umum_keuangan',
+  agenda:'persidangan', jadwal:'persidangan', rapat:'persidangan', 'rapat-komisi':'persidangan', banggar:'fasilitasi', bapemperda:'persidangan', bk:'fasilitasi', paripurna:'persidangan', risalah:'persidangan', notulen:'persidangan', keputusan:'persidangan',
+  propemperda:'persidangan', ranperda:'persidangan', naskahakademik:'persidangan', dim:'persidangan', harmonisasi:'persidangan', jdih:'persidangan',
+  kua:'fasilitasi', ppas:'fasilitasi', apbd:'fasilitasi', apbdp:'fasilitasi', lapsemester:'fasilitasi', pertanggungjawaban:'fasilitasi',
+  monopd:'fasilitasi', monprogram:'fasilitasi', monproyek:'fasilitasi', lkpj:'fasilitasi', temuan:'fasilitasi', rekomendasi:'fasilitasi', tindaklanjut:'fasilitasi',
+  reses:'fasilitasi', pokir:'fasilitasi', hearing:'persidangan', audiensi:'persidangan', aspirasidigital:'fasilitasi', pengaduan:'umum_keuangan',
+  berita:'persidangan', publikasi:'persidangan', dokumentasi:'persidangan', mediamon:'persidangan', protokoler:'persidangan'
+};
+/* Modul yang hanya bisa dibaca unit tertentu (selain pengelolanya tidak dapat membaca) */
+const BACA_KHUSUS = { bk: ['fasilitasi'], pengaduan: ['umum_keuangan'] };
+/* Admin: semua. Pimpinan (Sekretaris Dewan): baca semua. Pengelola: baca semua (kecuali BACA_KHUSUS), tulis hanya modul unitnya. */
+const canWrite = t => !CLOUD || ARKA_ROLE === 'admin' || (ARKA_ROLE === 'pengelola' && UNIT_MODUL[t] === ARKA_UNIT);
+const canRead  = t => !CLOUD || ['admin','pimpinan'].includes(ARKA_ROLE) || (ARKA_ROLE === 'pengelola' && (!BACA_KHUSUS[t] || BACA_KHUSUS[t].includes(ARKA_UNIT)));
 const canDelete = () => !CLOUD || ARKA_ROLE === 'admin';
 
 /* ============ DATA LAYER (siap migrasi Supabase: ganti fungsi db*) ============ */
@@ -160,7 +184,7 @@ const TABLES={};          // { modul: [rows] }
 const AUDIT=[];           // jejak audit
 function dbAll(t){return TABLES[t]||[]}
 function dbSave(t,row){
-  if(!canWrite()){toast('Peran Anda hanya dapat membaca data');return row}
+  if(!canWrite(t)){toast('Peran Anda tidak dapat mengubah data modul ini');return row}
   const list=TABLES[t]=TABLES[t]||[];
   const isNew=!row.id; if(isNew){row.id=uid();row.dibuat=today()}
   row.diubah=today();
@@ -184,7 +208,7 @@ function logAudit(aksi,t,row){
 
 /* ============ KONFIGURASI MENU ============ */
 const MENU=[
- {g:'Dashboard',items:[['dash','Dashboard Eksekutif'],['panduan','Panduan Input'],['periksa','Pemeriksaan Sistem'],['uji','Daftar Uji']]},
+ {g:'Dashboard',items:[['dash','Dashboard Eksekutif'],['panduan','Panduan Input'],['periksa','Pemeriksaan Sistem'],['uji','Daftar Uji'],['pengguna','Pengguna & Hak Akses']]},
  {g:'Master Data',items:[['pegawai','Pegawai'],['anggota','Anggota DPRD'],['komisi','Komisi'],['fraksi','Fraksi'],['alat','Alat Kelengkapan DPRD'],['tenaga','Tenaga Ahli'],['mitra','Mitra Kerja'],['program','Program'],['kegiatan','Kegiatan'],['subkegiatan','Sub Kegiatan'],['sasaran','Sasaran'],['iku','IKU'],['iki','IKI'],['regulasi','Regulasi']]},
  {g:'Renstra & Kinerja',items:[['rpjmd','RPJMD'],['renstra','Renstra'],['renja','Renja'],['cascading','Cascading'],['pohon','Pohon Kinerja'],['perjanjian','Perjanjian Kinerja'],['rencanaaksi','Rencana Aksi'],['ikuk','IKU (Kinerja)'],['ikik','IKI (Kinerja)'],['monitoring','Monitoring'],['evaluasi','Evaluasi']]},
  {g:'Umum & Keuangan',items:[['persuratan','Persuratan'],['arsip','Arsip'],['perjalanan','Perjalanan Dinas'],['kepegawaian','Kepegawaian'],['rumahtangga','Rumah Tangga'],['kendaraan','Kendaraan'],['anggaran','Anggaran'],['spj','SPJ']]},
@@ -204,9 +228,9 @@ const LABEL={};MENU.forEach(g=>g.items.forEach(([id,l])=>LABEL[id]=l));
 const STD=[['kode','Kode'],['nama','Nama / Uraian'],['unit','Unit / Bidang'],['tanggal','Tanggal','date'],['nilai','Nilai (Rp)','num'],['status','Status','sel',['Draft','Berjalan','Selesai','Terlambat']],['dokumen','Tautan Dokumen'],['keterangan','Keterangan','ta']];
 const FIELDS={
  pegawai:[['nip','NIP'],['nama','Nama'],['jabatan','Jabatan'],['unit','Unit Kerja'],['golongan','Golongan'],['status','Status','sel',['Aktif','Cuti','Pensiun']]],
- anggota:[['nama','Nama'],['fraksi','Fraksi'],['komisi','Komisi'],['dapil','Daerah Pemilihan'],['jabatan','Jabatan'],['status','Status','sel',['Aktif','Antar Waktu','Nonaktif']]],
- fraksi:[['kode','Kode'],['nama','Nama Fraksi'],['ketua','Ketua'],['jumlah','Jumlah Anggota','num'],['status','Status','sel',['Aktif','Nonaktif']]],
- komisi:[['kode','Kode'],['nama','Nama Komisi'],['ketua','Ketua'],['mitra','Mitra Kerja Utama'],['jumlah','Jumlah Anggota','num'],['status','Status','sel',['Aktif','Nonaktif']]],
+ anggota:[['nama','Nama'],['fraksi','Fraksi','rel','fraksi'],['komisi','Komisi','rel','komisi'],['dapil','Daerah Pemilihan'],['jabatan','Jabatan'],['status','Status','sel',['Aktif','Antar Waktu','Nonaktif']]],
+ fraksi:[['kode','Kode'],['nama','Nama Fraksi'],['ketua','Ketua'],['jumlah','Jumlah Anggota','hit',['anggota','fraksi']],['status','Status','sel',['Aktif','Nonaktif']]],
+ komisi:[['kode','Kode'],['nama','Nama Komisi'],['ketua','Ketua'],['mitra','Mitra Kerja Utama'],['jumlah','Jumlah Anggota','hit',['anggota','komisi']],['status','Status','sel',['Aktif','Nonaktif']]],
  program:[['kode','Kode Program'],['nama','Nama Program'],['unit','Unit Penanggung Jawab'],['pagu','Pagu (Rp)','num'],['realisasi','Realisasi (Rp)','num'],['status','Status','sel',['Berjalan','Selesai','Terlambat']]],
  iku:[['kode','Kode IKU'],['nama','Indikator'],['unit','Unit'],['target','Target','num'],['capaian','Realisasi','num'],['satuan','Satuan'],['status','Status','sel',['Tercapai','Proses','Tertunda']]]
 };
@@ -232,22 +256,22 @@ Object.assign(FIELDS,{
  evaluasi:[['tanggal','Tanggal','date'],['nama','Evaluasi'],['nilai','Nilai','num'],['rekomendasi','Rekomendasi'],['status','Status','sel',['Draft','Berjalan','Selesai']]]
 });
 const SEED={
- pegawai:[{nip:'198604122010011003',nama:'Hendra Wijaya, S.H.',jabatan:'Kepala Bagian Umum',unit:'Bagian Umum',golongan:'III/c',status:'Aktif'},{nip:'197811052003122005',nama:'Yuliana Sari, S.E.',jabatan:'Kasubag Keuangan',unit:'Bagian Keuangan',golongan:'III/b',status:'Aktif'},{nip:'199005202015031002',nama:'Rahmat Hidayat, S.Kom.',jabatan:'Analis Sistem Informasi',unit:'Bagian Persidangan',golongan:'III/a',status:'Aktif'},{nip:'198209142008022001',nama:'Maria Ulfah, S.Sos.',jabatan:'Analis Humas dan Protokol',unit:'Bagian Humas',golongan:'III/b',status:'Cuti'},{nip:'197505301999031004',nama:'Antonius Ayu, S.T.',jabatan:'Pengelola BMD',unit:'Bagian Umum',golongan:'III/d',status:'Aktif'}],
+ pegawai:[{nip:'198604122010011003',nama:'Hendra Wijaya, S.H.',jabatan:'Kepala Bagian Umum',unit:'Bagian Umum dan Keuangan',golongan:'III/c',status:'Aktif'},{nip:'197811052003122005',nama:'Yuliana Sari, S.E.',jabatan:'Kasubag Keuangan',unit:'Bagian Umum dan Keuangan',golongan:'III/b',status:'Aktif'},{nip:'199005202015031002',nama:'Rahmat Hidayat, S.Kom.',jabatan:'Analis Sistem Informasi',unit:'Bagian Persidangan dan Perundang-undangan',golongan:'III/a',status:'Aktif'},{nip:'198209142008022001',nama:'Maria Ulfah, S.Sos.',jabatan:'Analis Humas dan Protokol',unit:'Bagian Persidangan dan Perundang-undangan',golongan:'III/b',status:'Cuti'},{nip:'197505301999031004',nama:'Antonius Ayu, S.T.',jabatan:'Pengelola BMD',unit:'Bagian Umum dan Keuangan',golongan:'III/d',status:'Aktif'}],
  anggota:[{nama:'H. Ahmad Yani, S.Pd.',fraksi:'Fraksi Persatuan Pembangunan',komisi:'Komisi I',dapil:'Dapil I',jabatan:'Ketua DPRD',status:'Aktif'},{nama:'Siti Rahmawati, S.E.',fraksi:'Fraksi Golkar',komisi:'Komisi II',dapil:'Dapil II',jabatan:'Wakil Ketua I',status:'Aktif'},{nama:'Dedi Kurniawan',fraksi:'Fraksi Gerindra',komisi:'Komisi III',dapil:'Dapil III',jabatan:'Anggota',status:'Aktif'},{nama:'Ferry Ardiansyah',fraksi:'Fraksi NasDem',komisi:'Komisi IV',dapil:'Dapil I',jabatan:'Anggota',status:'Aktif'},{nama:'Lina Marlina',fraksi:'Fraksi PDI Perjuangan',komisi:'Komisi I',dapil:'Dapil II',jabatan:'Anggota',status:'Antar Waktu'}],
- fraksi:[{kode:'F-01',nama:'Fraksi Golkar',ketua:'Siti Rahmawati',jumlah:6,status:'Aktif'},{kode:'F-02',nama:'Fraksi Gerindra',ketua:'Dedi Kurniawan',jumlah:5,status:'Aktif'},{kode:'F-03',nama:'Fraksi PDI Perjuangan',ketua:'Lina Marlina',jumlah:4,status:'Aktif'},{kode:'F-04',nama:'Fraksi Persatuan Pembangunan',ketua:'H. Ahmad Yani',jumlah:3,status:'Aktif'}],
+ fraksi:[{kode:'F-01',nama:'Fraksi Golkar',ketua:'Siti Rahmawati',jumlah:6,status:'Aktif'},{kode:'F-02',nama:'Fraksi Gerindra',ketua:'Dedi Kurniawan',jumlah:5,status:'Aktif'},{kode:'F-03',nama:'Fraksi PDI Perjuangan',ketua:'Lina Marlina',jumlah:4,status:'Aktif'},{kode:'F-04',nama:'Fraksi Persatuan Pembangunan',ketua:'H. Ahmad Yani',jumlah:3,status:'Aktif'},{kode:'F-05',nama:'Fraksi NasDem',ketua:'Ferry Ardiansyah',jumlah:1,status:'Aktif'}],
  komisi:[{kode:'K-I',nama:'Komisi I',ketua:'Dedi Kurniawan',mitra:'Bagian Hukum, Bagian Pemerintahan',jumlah:11,status:'Aktif'},{kode:'K-II',nama:'Komisi II',ketua:'Siti Rahmawati',mitra:'Bappeda, Dinas Pendapatan',jumlah:11,status:'Aktif'},{kode:'K-III',nama:'Komisi III',ketua:'Ferry Ardiansyah',mitra:'Dinas PUPR, Dinas Perhubungan',jumlah:11,status:'Aktif'},{kode:'K-IV',nama:'Komisi IV',ketua:'Lina Marlina',mitra:'Dinas Kesehatan, Dinas Pendidikan',jumlah:12,status:'Aktif'}],
- program:[{kode:'1.01.01',nama:'Program Pelayanan Administrasi Perkantoran',unit:'Sekretariat DPRD',pagu:2450000000,realisasi:2118000000,status:'Berjalan'},{kode:'1.01.02',nama:'Program Peningkatan Sarana dan Prasarana Aparatur',unit:'Bagian Umum',pagu:1180000000,realisasi:1075000000,status:'Berjalan'},{kode:'1.02.01',nama:'Program Penyediaan Layanan Dewan',unit:'Bagian Persidangan',pagu:3620000000,realisasi:2940000000,status:'Berjalan'},{kode:'1.03.01',nama:'Program Peningkatan Kapasitas Aparatur',unit:'Bagian Kepegawaian',pagu:620000000,realisasi:620000000,status:'Selesai'}],
- iku:[{kode:'IKU-01',nama:'Persentase rapat paripurna terlaksana tepat waktu',unit:'Bagian Persidangan',target:100,capaian:96,satuan:'%',status:'Proses'},{kode:'IKU-02',nama:'Persentase Perda yang dibahas sesuai Propemperda',unit:'Bagian Legislasi',target:90,capaian:92,satuan:'%',status:'Tercapai'},{kode:'IKU-03',nama:'Persentase aduan masyarakat ditindaklanjuti',unit:'Bagian Persidangan',target:95,capaian:88,satuan:'%',status:'Proses'},{kode:'IKU-04',nama:'Nilai SAKIP Sekretariat',unit:'Sekretariat DPRD',target:80,capaian:78.5,satuan:'Nilai',status:'Proses'},{kode:'IKU-05',nama:'Persentase BMD tercatat dan terverifikasi',unit:'Bagian Umum',target:100,capaian:100,satuan:'%',status:'Tercapai'}]
+ program:[{kode:'1.01.01',nama:'Program Pelayanan Administrasi Perkantoran',unit:'Sekretariat DPRD',pagu:2450000000,realisasi:2118000000,status:'Berjalan'},{kode:'1.01.02',nama:'Program Peningkatan Sarana dan Prasarana Aparatur',unit:'Bagian Umum dan Keuangan',pagu:1180000000,realisasi:1075000000,status:'Berjalan'},{kode:'1.02.01',nama:'Program Penyediaan Layanan Dewan',unit:'Bagian Persidangan dan Perundang-undangan',pagu:3620000000,realisasi:2940000000,status:'Berjalan'},{kode:'1.03.01',nama:'Program Peningkatan Kapasitas Aparatur',unit:'Subbagian Tata Usaha dan Kepegawaian',pagu:620000000,realisasi:620000000,status:'Selesai'}],
+ iku:[{kode:'IKU-01',nama:'Persentase rapat paripurna terlaksana tepat waktu',unit:'Bagian Persidangan dan Perundang-undangan',target:100,capaian:96,satuan:'%',status:'Proses'},{kode:'IKU-02',nama:'Persentase Perda yang dibahas sesuai Propemperda',unit:'Bagian Persidangan dan Perundang-undangan',target:90,capaian:92,satuan:'%',status:'Tercapai'},{kode:'IKU-03',nama:'Persentase aduan masyarakat ditindaklanjuti',unit:'Bagian Persidangan dan Perundang-undangan',target:95,capaian:88,satuan:'%',status:'Proses'},{kode:'IKU-04',nama:'Nilai SAKIP Sekretariat',unit:'Sekretariat DPRD',target:80,capaian:78.5,satuan:'Nilai',status:'Proses'},{kode:'IKU-05',nama:'Persentase BMD tercatat dan terverifikasi',unit:'Bagian Umum dan Keuangan',target:100,capaian:100,satuan:'%',status:'Tercapai'}]
 };
 Object.assign(SEED,{
  kegiatan:[{kode:'1.01.01.01',nama:'Penyediaan Jasa Surat Menyurat',program:'1.01.01',pagu:320000000,realisasi:298000000,status:'Berjalan'},{kode:'1.01.01.02',nama:'Penyediaan Jasa Komunikasi, Sumber Daya Air dan Listrik',program:'1.01.01',pagu:540000000,realisasi:501000000,status:'Berjalan'},{kode:'1.02.01.01',nama:'Penyelenggaraan Rapat Paripurna',program:'1.02.01',pagu:880000000,realisasi:760000000,status:'Berjalan'},{kode:'1.03.01.01',nama:'Pendidikan dan Pelatihan Teknis Aparatur',program:'1.03.01',pagu:620000000,realisasi:620000000,status:'Selesai'}],
  subkegiatan:[{kode:'1.01.01.01.0001',nama:'Pengadaan Perangko dan Meterai',kegiatan:'1.01.01.01',pagu:120000000,status:'Berjalan'},{kode:'1.02.01.01.0001',nama:'Penyelenggaraan Rapat Paripurna Reguler',kegiatan:'1.02.01.01',pagu:430000000,status:'Selesai'},{kode:'1.02.01.01.0002',nama:'Penyusunan Risalah Rapat',kegiatan:'1.02.01.01',pagu:95000000,status:'Berjalan'}],
- sasaran:[{kode:'S-01',nama:'Meningkatnya kualitas fungsi legislasi',unit:'Bagian Legislasi',iku:'IKU-02',status:'Tercapai'},{kode:'S-02',nama:'Meningkatnya kualitas layanan persidangan',unit:'Bagian Persidangan',iku:'IKU-01',status:'Berjalan'},{kode:'S-03',nama:'Meningkatnya akuntabilitas kinerja Sekretariat',unit:'Sekretariat DPRD',iku:'IKU-04',status:'Berjalan'},{kode:'S-04',nama:'Terkelolanya BMD secara tertib',unit:'Bagian Umum',iku:'IKU-05',status:'Tercapai'}],
+ sasaran:[{kode:'S-01',nama:'Meningkatnya kualitas fungsi legislasi',unit:'Bagian Persidangan dan Perundang-undangan',iku:'IKU-02',status:'Tercapai'},{kode:'S-02',nama:'Meningkatnya kualitas layanan persidangan',unit:'Bagian Persidangan dan Perundang-undangan',iku:'IKU-01',status:'Berjalan'},{kode:'S-03',nama:'Meningkatnya akuntabilitas kinerja Sekretariat',unit:'Sekretariat DPRD',iku:'IKU-04',status:'Berjalan'},{kode:'S-04',nama:'Terkelolanya BMD secara tertib',unit:'Bagian Umum dan Keuangan',iku:'IKU-05',status:'Tercapai'}],
  regulasi:[{kode:'Perbup 57/2021',nama:'Kedudukan, Susunan Organisasi, Tugas dan Fungsi Sekretariat DPRD',jenis:'Perbup',status:'Berlaku'},{kode:'PP 12/2018',nama:'Tata Tertib DPRD',jenis:'PP',status:'Berlaku'},{kode:'Perpres 29/2014',nama:'Sistem Akuntabilitas Kinerja Instansi Pemerintah (SAKIP)',jenis:'Perpres',status:'Berlaku'},{kode:'PermenPANRB 53/2014',nama:'Perjanjian Kinerja, Pelaporan Kinerja, dan Pengelolaan Data Kinerja',jenis:'Permen',status:'Berlaku'},{kode:'PermenPANRB 88/2021',nama:'Evaluasi Akuntabilitas Kinerja Instansi Pemerintah',jenis:'Permen',status:'Berlaku'},{kode:'PermenPANRB 89/2021',nama:'Pengukuran Kinerja',jenis:'Permen',status:'Berlaku'},{kode:'PermenPANRB 6/2022',nama:'Pedoman Penyusunan Perencanaan Kinerja',jenis:'Permen',status:'Berlaku'}],
  renstra:[{kode:'RS-01',nama:'Renstra Sekretariat DPRD 2025–2029',unit:'Sekretariat DPRD',periode:'2025–2029',status:'Berjalan'}],
  renja:[{kode:'RJ-2026',nama:'Renja Sekretariat DPRD Tahun 2026',tahun:2026,pagu:6000000000,status:'Berjalan'}],
- perjanjian:[{kode:'PK-2026-01',nama:'Perjanjian Kinerja Sekretaris DPRD Tahun 2026',pejabat:'Sekretaris DPRD',tahun:2026,status:'Berjalan'}],
- rencanaaksi:[{kode:'RA-01',nama:'Penyusunan dokumen legislasi prioritas',sasaran:'S-01',pj:'Bagian Legislasi',tanggal:'2026-12-31',status:'Berjalan'},{kode:'RA-02',nama:'Penyelenggaraan layanan persidangan terjadwal',sasaran:'S-02',pj:'Bagian Persidangan',tanggal:'2026-11-30',status:'Berjalan'},{kode:'RA-03',nama:'Penyusunan laporan kinerja triwulan',sasaran:'S-03',pj:'Bagian Umum',tanggal:'2026-10-31',status:'Terlambat'}]
+ perjanjian:[{kode:'PK-2026-01',nama:'Perjanjian Kinerja Sekretaris DPRD Tahun 2026',pejabat:'Sekretaris Dewan',tahun:2026,status:'Berjalan'}],
+ rencanaaksi:[{kode:'RA-01',nama:'Penyusunan dokumen legislasi prioritas',sasaran:'S-01',pj:'Bagian Persidangan dan Perundang-undangan',tanggal:'2026-12-31',status:'Berjalan'},{kode:'RA-02',nama:'Penyelenggaraan layanan persidangan terjadwal',sasaran:'S-02',pj:'Bagian Persidangan dan Perundang-undangan',tanggal:'2026-11-30',status:'Berjalan'},{kode:'RA-03',nama:'Penyusunan laporan kinerja triwulan',sasaran:'S-03',pj:'Bagian Umum dan Keuangan',tanggal:'2026-10-31',status:'Terlambat'}]
 });
 Object.assign(SEED,{
  pohon:[
@@ -283,9 +307,9 @@ Object.assign(SEED,{
   {kode:'005/0411/SEKWAN/2026',nama:'Undangan audiensi kelompok masyarakat',jenis:'Keluar',pengirim:'Kelompok Tani Desa',tanggal:'2026-10-18',status:'Terlambat'}
  ],
  arsip:[
-  {kode:'ARS-2026-001',nama:'Berkas undangan rapat konsultasi KUA-PPAS',surat:'005/0123/SEKWAN/2026',unit:'Bagian Umum',retensi:10,status:'Aktif'},
-  {kode:'ARS-2026-002',nama:'Notulen dan daftar hadir rapat Badan Anggaran',surat:'005/0124/SEKWAN/2026',unit:'Bagian Persidangan',retensi:5,status:'Aktif'},
-  {kode:'ARS-2025-014',nama:'Surat keputusan pimpinan tahun 2025',surat:'005/0410/SEKWAN/2026',unit:'Bagian Umum',retensi:10,status:'Inaktif'}
+  {kode:'ARS-2026-001',nama:'Berkas undangan rapat konsultasi KUA-PPAS',surat:'005/0123/SEKWAN/2026',unit:'Bagian Umum dan Keuangan',retensi:10,status:'Aktif'},
+  {kode:'ARS-2026-002',nama:'Notulen dan daftar hadir rapat Badan Anggaran',surat:'005/0124/SEKWAN/2026',unit:'Bagian Persidangan dan Perundang-undangan',retensi:5,status:'Aktif'},
+  {kode:'ARS-2025-014',nama:'Surat keputusan pimpinan tahun 2025',surat:'005/0410/SEKWAN/2026',unit:'Bagian Umum dan Keuangan',retensi:10,status:'Inaktif'}
  ],
  perjalanan:[
   {kode:'SPD-001/2026',nama:'Kunjungan kerja studi banding ke DPRD kabupaten lain',pegawai:'Rahmat Hidayat, S.Kom.',tanggal:'2026-09-14',nilai:18500000,status:'Selesai'},
@@ -296,13 +320,13 @@ Object.assign(SEED,{
   {kode:'KP-02',nama:'Pengajuan cuti tahunan',pegawai:'Maria Ulfah, S.Sos.',jenis:'Cuti',tanggal:'2026-09-01',status:'Selesai'}
  ],
  rumahtangga:[
-  {kode:'RT-01',nama:'Pengadaan ATK semester II',jenis:'ATK',unit:'Bagian Umum',nilai:85000000,tanggal:'2026-07-08',status:'Selesai'},
-  {kode:'RT-02',nama:'Pemeliharaan AC gedung paripurna',jenis:'Pemeliharaan Gedung',unit:'Bagian Umum',nilai:24000000,tanggal:'2026-10-02',status:'Berjalan'},
-  {kode:'RT-03',nama:'Jasa kebersihan gedung',jenis:'Kebersihan',unit:'Bagian Umum',nilai:96000000,tanggal:'2026-01-05',status:'Berjalan'}
+  {kode:'RT-01',nama:'Pengadaan ATK semester II',jenis:'ATK',unit:'Bagian Umum dan Keuangan',nilai:85000000,tanggal:'2026-07-08',status:'Selesai'},
+  {kode:'RT-02',nama:'Pemeliharaan AC gedung paripurna',jenis:'Pemeliharaan Gedung',unit:'Bagian Umum dan Keuangan',nilai:24000000,tanggal:'2026-10-02',status:'Berjalan'},
+  {kode:'RT-03',nama:'Jasa kebersihan gedung',jenis:'Kebersihan',unit:'Bagian Umum dan Keuangan',nilai:96000000,tanggal:'2026-01-05',status:'Berjalan'}
  ],
  kendaraan:[
   {kode:'KH 1001 A',nama:'Toyota Innova',pengguna:'Pimpinan DPRD',tanggal:'2026-12-20',status:'Aktif'},
-  {kode:'KH 1002 B',nama:'Toyota Hiace Commuter',pengguna:'Bagian Umum',tanggal:'2026-06-30',status:'Servis'}
+  {kode:'KH 1002 B',nama:'Toyota Hiace Commuter',pengguna:'Bagian Umum dan Keuangan',tanggal:'2026-06-30',status:'Servis'}
  ],
  anggaran:[
   {kode:'AG-01',nama:'Penyediaan perangko dan meterai',subkegiatan:'1.01.01.01.0001',pagu:120000000,realisasi:98000000,status:'Berjalan'},
@@ -329,17 +353,17 @@ Object.assign(SEED,{
   {kode:'RBA-02',nama:'Penggantian server data persidangan',anggaran:'AG-02',jenis:'Elektronik',nilai:150000000,tanggal:'2027-02-28',status:'Draft'}
  ],
  inventaris:[
-  {kode:'BMD-001',nama:'Kendaraan Toyota Innova',jenis:'Kendaraan',unit:'Bagian Umum',tahun:2022,nilai:385000000,status:'Baik'},
-  {kode:'BMD-002',nama:'Meja rapat paripurna (set)',jenis:'Peralatan Kantor',unit:'Bagian Persidangan',tahun:2019,nilai:64000000,status:'Rusak Ringan'},
-  {kode:'BMD-003',nama:'Laptop kerja analis sistem informasi',jenis:'Elektronik',unit:'Bagian Persidangan',tahun:2023,nilai:14500000,status:'Baik'},
-  {kode:'BMD-004',nama:'Printer multifungsi lantai 2',jenis:'Elektronik',unit:'Bagian Umum',tahun:2017,nilai:6800000,status:'Rusak Berat'}
+  {kode:'BMD-001',nama:'Kendaraan Toyota Innova',jenis:'Kendaraan',unit:'Bagian Umum dan Keuangan',tahun:2022,nilai:385000000,status:'Baik'},
+  {kode:'BMD-002',nama:'Meja rapat paripurna (set)',jenis:'Peralatan Kantor',unit:'Bagian Persidangan dan Perundang-undangan',tahun:2019,nilai:64000000,status:'Rusak Ringan'},
+  {kode:'BMD-003',nama:'Laptop kerja analis sistem informasi',jenis:'Elektronik',unit:'Bagian Persidangan dan Perundang-undangan',tahun:2023,nilai:14500000,status:'Baik'},
+  {kode:'BMD-004',nama:'Printer multifungsi lantai 2',jenis:'Elektronik',unit:'Bagian Umum dan Keuangan',tahun:2017,nilai:6800000,status:'Rusak Berat'}
  ],
  pemeliharaan:[
   {kode:'PMH-01',nama:'Perbaikan meja rapat paripurna',barang:'BMD-002',tanggal:'2026-09-20',nilai:3500000,status:'Berjalan'},
   {kode:'PMH-02',nama:'Servis berkala Toyota Innova',barang:'BMD-001',tanggal:'2026-08-10',nilai:2100000,status:'Selesai'}
  ],
  mutasi:[
-  {kode:'BA-MTS-01/2026',barang:'BMD-003',unitAsal:'Bagian Persidangan',unitTujuan:'Bagian Legislasi',jenis:'Pindah Pengguna',tanggal:'2026-10-01',status:'Selesai'}
+  {kode:'BA-MTS-01/2026',barang:'BMD-003',unitAsal:'Bagian Persidangan dan Perundang-undangan',unitTujuan:'Bagian Persidangan dan Perundang-undangan',jenis:'Pindah Pengguna',tanggal:'2026-10-01',status:'Selesai'}
  ],
  penghapusan:[
   {kode:'SK-HPS-01/2026',barang:'BMD-004',alasan:'Rusak Berat',tanggal:'2026-10-15',status:'Draft'}
@@ -539,7 +563,7 @@ Object.assign(SEED,{
  ],
  pengaduan:[
   {kode:'PGD-2026-0412',nama:'Jalan rusak di Kecamatan Bunut Hilir',kanal:'Surat',unit:'Dinas PUPR',tenggat:'2026-11-30',status:'Berjalan'},
-  {kode:'PGD-2026-0398',nama:'Keterlambatan pembayaran honor tenaga kebersihan',kanal:'Langsung',unit:'Bagian Keuangan',tenggat:'2026-10-10',status:'Terlambat'}
+  {kode:'PGD-2026-0398',nama:'Keterlambatan pembayaran honor tenaga kebersihan',kanal:'Langsung',unit:'Bagian Umum dan Keuangan',tenggat:'2026-10-10',status:'Terlambat'}
  ]
 });
 Object.assign(FIELDS,{
@@ -581,7 +605,7 @@ function seedFor(t){
   });o.id=uid();o.dibuat='2026-01-0'+i;o.diubah=o.dibuat;return o});
 }
 function ensureData(){
-  MENU.forEach(g=>g.items.forEach(([id])=>{ if(!TABLES[id] && id!=='dash' && id!=='evidence' && id!=='panduan' && id!=='periksa' && id!=='uji' && !id.startsWith('an-')) TABLES[id]=seedFor(id).map(r=>({id:uid(),dibuat:'2026-01-01',diubah:'2026-01-01',...r})) }));
+  MENU.forEach(g=>g.items.forEach(([id])=>{ if(!TABLES[id] && id!=='dash' && id!=='evidence' && id!=='panduan' && id!=='periksa' && id!=='uji' && id!=='pengguna' && !id.startsWith('an-')) TABLES[id]=seedFor(id).map(r=>({id:uid(),dibuat:'2026-01-01',diubah:'2026-01-01',...r})) }));
   resolveRefs();
   AUDIT.push({waktu:new Date().toLocaleString('id-ID'),aksi:'MUAT',modul:'sistem',ref:'Data contoh dimuat',user:'Sistem'});
 }
@@ -597,7 +621,7 @@ function navIsOpen(gi,items,cur){
 function renderNav(){
   const cur=location.hash.slice(1)||'dash', q=NAVQ.trim().toLowerCase();
   $('#nav').innerHTML=MENU.map((g,gi)=>{
-    const items=g.items.filter(([id,l])=>!q||(l+' '+g.g).toLowerCase().includes(q));
+    const items=g.items.filter(([id,l])=>(!q||(l+' '+g.g).toLowerCase().includes(q))&&(!isDataMod(id)||canRead(id)));
     if(!items.length)return '';
     const open=navIsOpen(gi,items,cur);
     return `<div class="ng"><button class="gh" onclick="toggleG(${gi})"><span class="gt">${esc(g.g)}</span><span class="car">${open?'▾':'▸'}</span></button>`+
@@ -606,7 +630,7 @@ function renderNav(){
 }
 function toggleG(gi){
   const g=MENU[gi], cur=location.hash.slice(1)||'dash';
-  const items=g.items.filter(([id,l])=>!NAVQ||(l+' '+g.g).toLowerCase().includes(NAVQ.trim().toLowerCase()));
+  const items=g.items.filter(([id,l])=>(!NAVQ||(l+' '+g.g).toLowerCase().includes(NAVQ.trim().toLowerCase()))&&(!isDataMod(id)||canRead(id)));
   NAVST[gi]=!navIsOpen(gi,items,cur);
   renderNav();
 }
@@ -618,6 +642,7 @@ function go(){
   if(id==='panduan')return renderPanduan();
   if(id==='periksa')return renderPeriksa();
   if(id==='uji')return renderUji();
+  if(id==='pengguna')return renderPengguna();
   if(id.startsWith('an-'))return renderAnalytics(id);
   renderModule(id);
 }
@@ -661,13 +686,14 @@ const kpiTable=rows=>`<table style="margin-top:8px"><tr><th>Indikator</th><th>Ni
 /* ============ MODUL GENERIK (CRUD, search, filter, export, audit) ============ */
 let S={q:'',st:'',mod:''};
 function renderModule(id){
+  if(CLOUD&&!canRead(id)&&isDataMod(id)){ $('#view').innerHTML='<div class="empty">Peran Anda tidak memiliki akses ke menu ini.</div>'; return }
   const cols=(FIELDS[id]||STD);
   if(S.mod!==id){S={q:'',st:'',mod:id}}
   const title=LABEL[id]||id;
   const hasStatus=cols.some(c=>c[0]==='status');
   $('#view').innerHTML=`
   <div class="row"><div><h1>${esc(title)}</h1><div class="sub">Record Engine · CRUD, pencarian, filter, ekspor, audit trail</div></div>
-  <div class="actions noprint">${canWrite()?'<button class="btn-p" id="btnAdd">+ Tambah</button>':''}</div></div>
+  <div class="actions noprint">${canWrite(id)?'<button class="btn-p" id="btnAdd">+ Tambah</button>':''}</div></div>
   ${statHtml(id)}
   <div id="chkBox"></div>
   <div class="card">
@@ -734,12 +760,13 @@ function drawTable(id){
   const rows=filtered(id);
   $('#tbl').innerHTML=rows.length?`<table><thead><tr><th>No</th>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}<th class="noprint">Aksi</th></tr></thead><tbody>
   ${rows.map((r,i)=>`<tr><td>${i+1}</td>${cols.map(c=>`<td>${cellVal(r,c)}</td>`).join('')}
-  <td class="noprint actions">${canWrite()?`<button onclick="openForm('${id}','${r.id}')">Ubah</button>`:''} ${canDelete()?`<button class="btn-d" onclick="delRow('${id}','${r.id}')">Hapus</button>`:''}</td></tr>`).join('')}
+  <td class="noprint actions">${canWrite(id)?`<button onclick="openForm('${id}','${r.id}')">Ubah</button>`:''} ${canDelete()?`<button class="btn-d" onclick="delRow('${id}','${r.id}')">Hapus</button>`:''}</td></tr>`).join('')}
   </tbody></table>`:`<div class="empty">Tidak ada data yang cocok.</div>`;
   if(!window._sr)window._sr=0;
 }
 function cellVal(r,c){
   const [k,,ty,opt]=c, v=r[k];
+  if(ty==='hit')return fmt(dbAll(opt[0]).filter(x=>x[opt[1]]===r.id).length);
   if(k==='status')return `<span class="pill s-${esc(v)}">${esc(v)}</span>`;
   if(ty==='rel'){const t=dbAll(opt).find(x=>x.id===v);return t?esc(t.nama||t.kode):'<span class="sub">—</span>'}
   if(ty==='num')return fmt(v);
@@ -758,7 +785,7 @@ function openForm(t,id){
   const row=id?dbAll(t).find(r=>r.id===id):{};
   $('#modal').innerHTML=`<div class="row"><h1 style="font-size:17px">${id?'Ubah':'Tambah'} · ${esc(LABEL[t])}</h1><button onclick="closeM()">✕</button></div>
   <form class="form" style="margin-top:12px" id="f">
-  ${cols.map(([k,l,ty,opt])=>{
+  ${cols.filter(c=>c[2]!=='hit').map(([k,l,ty,opt])=>{
     const v=row[k]??'';
     const full=ty==='ta'||k==='keterangan'?'full':'';
     let inp;
@@ -879,7 +906,7 @@ const arkaTn = t => t.replace(/-/g, '_');
 const arkaCn = k => k.replace(/([A-Z])/g, '_$1').toLowerCase();
 const arkaCk = k => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const ARKA_MODULES = MENU.flatMap(g => g.items.map(([id]) => id))
-  .filter(id => id !== 'dash' && id !== 'evidence' && id !== 'panduan' && id !== 'periksa' && id !== 'uji' && !id.startsWith('an-'));
+  .filter(id => id !== 'dash' && id !== 'evidence' && id !== 'panduan' && id !== 'periksa' && id !== 'uji' && id !== 'pengguna' && !id.startsWith('an-'));
 const ARKA_TYPES = Object.fromEntries(ARKA_MODULES.map(t =>
   [t, Object.fromEntries((FIELDS[t] || STD).map(c => [c[0], c[2] || 'txt']))]));
 function arkaFromRow(t, r) {
@@ -893,6 +920,7 @@ function arkaFromRow(t, r) {
 function arkaToRow(t, row) {
   const out = { id: row.id, dibuat: row.dibuat || null, diubah: row.diubah || null };
   for (const [k, ty] of Object.entries(ARKA_TYPES[t] || {})) {
+    if (ty === 'hit') continue;
     let v = row[k];
     if (v === '' || v === undefined) v = null;
     if (ty === 'num' && v !== null) v = Number(v);
@@ -923,7 +951,7 @@ async function arkaDelete(t, id) {
 }
 
 function showLogin(){
-  ARKA_ROLE=null;
+  ARKA_ROLE=null; ARKA_UNIT=null;
   Object.keys(TABLES).forEach(k=>delete TABLES[k]);
   $('#out').style.display='none';
   $('#login').classList.add('show');
@@ -931,16 +959,16 @@ function showLogin(){
 }
 async function startCloud(){
   const {data:{user}}=await sb.auth.getUser();
-  const {data:p,error}=user?await sb.from('profiles').select('peran,nama').eq('id',user.id).maybeSingle():{data:null,error:true};
-  if(error||!p){
-    $('#lerr').textContent='Akun ini belum memiliki peran. Hubungi admin.';
+  const {data:p,error}=user?await sb.from('profiles').select('peran,nama,unit').eq('id',user.id).maybeSingle():{data:null,error:true};
+  if(error||!p||!p.peran||(p.peran==='pengelola'&&!p.unit)){
+    $('#lerr').textContent='Akun ini belum diberi peran atau unit kerja. Hubungi admin.';
     await sb.auth.signOut();
     return;
   }
-  ARKA_ROLE=p.peran; ARKA_NAMA=p.nama||user.email;
+  ARKA_ROLE=p.peran; ARKA_NAMA=p.nama||user.email; ARKA_UNIT=p.unit||null;
   $('#login').classList.remove('show');
   $('#out').style.display='';
-  $('#out').title=`Keluar (${ARKA_NAMA} · ${ARKA_ROLE})`;
+  $('#out').title=`Keluar (${ARKA_NAMA} · ${ARKA_ROLE}${ARKA_UNIT?' · '+UNITS[ARKA_UNIT]:''})`;
   arkaLoad().then(()=>go()).catch(e=>{go();toast('Gagal memuat data: '+e.message)});
 }
 async function doLogin(e){
@@ -987,7 +1015,7 @@ async function renderAtt(t,id){
   try{
     const list=await attList(id);
     const rowsHtml=list.map(a=>`<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(a.nama)} <span class="sub">· ${fmtSize(Number(a.ukuran)||0)}</span></span><span class="actions"><button onclick="attOpen('${a.id}','${esc(a.path||'')}')">Buka</button>${canDelete()?` <button class="btn-d" onclick="attDel('${t}','${id}','${a.id}','${esc(a.path||'')}')">Hapus</button>`:''}</span></div>`).join('');
-    box.innerHTML=`<div class="row"><b>Lampiran (${list.length})</b>${canWrite()?'<label class="btn-p" style="padding:6px 12px;border-radius:10px;cursor:pointer">+ Unggah<input type="file" id="attIn" multiple hidden></label>':''}</div>
+    box.innerHTML=`<div class="row"><b>Lampiran (${list.length})</b>${canWrite(t)?'<label class="btn-p" style="padding:6px 12px;border-radius:10px;cursor:pointer">+ Unggah<input type="file" id="attIn" multiple hidden></label>':''}</div>
       <div style="margin-top:6px">${rowsHtml||'<div class="hint">Belum ada lampiran.</div>'}</div>`;
     const inp=$('#attIn');
     if(inp)inp.onchange=()=>attUpload(t,id,[...inp.files]);
@@ -997,10 +1025,10 @@ async function attUpload(t,id,files){
   for(const f of files){
     if(f.size>10*1024*1024){toast(f.name+' melebihi batas 10 MB');continue}
     if(!CLOUD){ (ATT_LOCAL[id]=ATT_LOCAL[id]||[]).push({id:uid(),nama:f.name,ukuran:f.size,blob:f}); continue }
-    const aid=uid(), path=`${t}/${id}/${aid}-${f.name.replace(/[^\w.\-]/g,'_')}`;
+    const aid=uid(), key=arkaTn(t), path=`${key}/${id}/${aid}-${f.name.replace(/[^\w.\-]/g,'_')}`;
     const {error}=await sb.storage.from(ATT_BUCKET).upload(path,f,{contentType:f.type||'application/octet-stream'});
     if(error){toast('Gagal unggah: '+error.message);continue}
-    const {error:e2}=await sb.from('lampiran').insert({id:aid,modul:t,record_id:id,nama_file:f.name,path,ukuran:f.size,tipe:f.type||null,tanggal:today()});
+    const {error:e2}=await sb.from('lampiran').insert({id:aid,modul:key,record_id:id,nama_file:f.name,path,ukuran:f.size,tipe:f.type||null,tanggal:today()});
     if(e2)toast('Gagal mencatat lampiran: '+e2.message);
   }
   logAudit('UNGGAH',t,{nama:files.length+' berkas lampiran'});
@@ -1030,7 +1058,7 @@ async function attDel(t,recId,aid,path){
 }
 
 /* ============ PANDUAN INPUT (alur per menu dan integrasi antar menu, 3D) ============ */
-const NONDATA=['dash','evidence','panduan','periksa','uji'];
+const NONDATA=['dash','evidence','panduan','periksa','uji','pengguna'];
 const isDataMod=id=>!NONDATA.includes(id)&&!id.startsWith('an-');
 const DATA_MODS=MENU.flatMap(g=>g.items.map(([id])=>id)).filter(isDataMod);
 const GROUP_OF={}; MENU.forEach((g,gi)=>g.items.forEach(([id])=>GROUP_OF[id]=gi));
@@ -1200,6 +1228,61 @@ function draw3D(){
   PG.mode==='int'?build3DInt():build3DMenu();
 }
 
+/* ============ KAMUS DATA (dibuat dari konfigurasi; sidik struktur untuk deteksi perubahan) ============ */
+function sidikStruktur(){
+  const s=JSON.stringify({m:MENU,f:FIELDS,u:UNIT_MODUL,b:BACA_KHUSUS});
+  let h=2166136261;
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619)>>>0; }
+  return h.toString(16).padStart(8,'0');
+}
+function buatKamus(){
+  const cn=k=>k.replace(/([A-Z])/g,'_$1').toLowerCase();
+  const tb=t=>t.replace(/-/g,'_');
+  const tipe=c=>c[2]==='hit'?'dihitung otomatis dari '+tb(c[3][0]):c[2]==='rel'?`relasi ke \`${tb(c[3])}\``:c[2]==='num'?'angka':c[2]==='date'?'tanggal':c[2]==='sel'?'pilihan: '+c[3].join(', '):'teks';
+  const L=[];
+  L.push('# Kamus Data ARKA','',
+    `- **Sidik struktur:** \`${sidikStruktur()}\``,
+    `- **Dibuat:** ${today()} dari ARKA.html`,
+    `- **Tabel modul:** ${DATA_MODS.length}, ditambah \`audit_log\`, \`profiles\`, dan \`lampiran\``,
+    `- **Baris contoh saat dibuat:** ${DATA_MODS.reduce((a,t)=>a+dbAll(t).length,0)}`,'',
+    '## Cara memperbarui',
+    '- Bandingkan sidik struktur di atas dengan sidik yang tampil di menu Pemeriksaan Sistem pada ARKA.html.',
+    '- Jika sidiknya berbeda, struktur sudah berubah. Buat ulang berkas ini dengan tombol "Kamus Data (.md)" di menu Pemeriksaan Sistem.',
+    '- Setiap perubahan MENU atau FIELDS di ARKA.html wajib diikuti pembaruan berkas ini.',
+    '- Setiap tabel modul juga memiliki kolom `id` (teks), `dibuat`, dan `diubah` (tanggal).','',
+    '## Peran dan akses',
+    '| Peran | Baca | Tambah dan ubah | Hapus |','|---|---|---|---|',
+    '| admin | semua | semua | semua |',
+    '| pengelola (per unit) | semua, kecuali modul yang dibatasi (lihat Pembagian unit) | hanya modul unitnya | tidak |',
+    '| pimpinan (Sekretaris Dewan) | semua | tidak | tidak |','',
+    'Pengelola hanya dapat membaca modul `bk` dari unit Fasilitasi dan `pengaduan` dari unit Umum dan Keuangan, selain admin dan pimpinan.','',
+    '## Tabel sistem',
+    '| Tabel | Fungsi |','|---|---|',
+    '| `audit_log` | jejak perubahan (aksi, modul, referensi, pengguna, waktu) |',
+    '| `profiles` | peran pengguna (id, nama, peran) |',
+    '| `lampiran` | catatan berkas; berkas tersimpan di bucket `arka-lampiran` |',
+    '| `modul_akses` | pemetaan modul ke unit pengelola dan pembatasan baca |','',
+    '## Pembagian unit (Perbup Kapuas Hulu Nomor 57 Tahun 2021)',
+    ...Object.entries(UNITS).map(([u,n])=>`- **${n}:** ${DATA_MODS.filter(t=>UNIT_MODUL[t]===u).map(t=>LABEL[t]).join(', ')}`),'',
+    '## Halaman tanpa tabel',
+    'Dashboard Eksekutif, Panduan Input, Pemeriksaan Sistem, Daftar Uji, Evidence Center, dan seluruh Analytics Center membaca data dari tabel modul dan tidak memiliki tabel sendiri.','',
+    '## Daftar menu dan tabel');
+  MENU.forEach(g=>{
+    const ids=g.items.map(([id])=>id).filter(isDataMod);
+    if(!ids.length)return;
+    L.push(`### ${g.g}`,'');
+    ids.forEach(t=>{
+      L.push(`#### ${LABEL[t]} (tabel \`${tb(t)}\`)`,'',
+        `- **Membutuhkan:** ${deps(t).map(d=>LABEL[d]).join(', ')||'tidak ada'}`,
+        `- **Dipakai oleh:** ${downs(t).map(d=>LABEL[d]).join(', ')||'belum ada'}`,
+        `- **Baris saat dibuat:** ${dbAll(t).length}`,'',
+        '| Kolom | Nama di database | Jenis |','|---|---|---|',
+        ...(FIELDS[t]||STD).map(c=>`| ${c[1]} | \`${cn(c[0])}\` | ${tipe(c)} |`),'');
+    });
+  });
+  return L.join('\n');
+}
+
 /* ============ 1. PEMERIKSAAN DATA PER MODUL ============ */
 function auditModule(t){
   const cols=FIELDS[t]||STD, rows=dbAll(t), out=[], kodeCount={};
@@ -1253,6 +1336,7 @@ async function sysChecks(){
     records+=dbAll(t).length; if(!dbAll(t).length)kosong.push(LABEL[t]);
   });
   add('Data','Jumlah modul dan record', 'OK', DATA_MODS.length+' modul, '+records+' record');
+  add('Dokumentasi','Sidik struktur', 'OK', sidikStruktur()+' (bandingkan dengan sidik di KAMUS_DATA.md)');
   add('Data','Modul tanpa data', kosong.length?'Perlu perhatian':'OK', kosong.length?kosong.join(', '):'Semua modul berisi data');
   add('Data','Temuan kritis', kritis?'Gagal':'OK', kritis+' temuan (relasi putus, nilai di luar pilihan, kode ganda, atau kolom wajib kosong)');
   add('Data','Peringatan', peringatan?'Perlu perhatian':'OK', peringatan+' peringatan (kolom belum diisi atau relasi belum dihubungkan)');
@@ -1260,14 +1344,15 @@ async function sysChecks(){
 }
 async function renderPeriksa(){
   if(CLOUD&&ARKA_ROLE!=='admin'){
-    $('#view').innerHTML='<div class="empty">Pemeriksaan sistem hanya dapat dibuka oleh admin. Operator dan pimpinan dapat memakai "Periksa data" di setiap modul.</div>';
+    $('#view').innerHTML='<div class="empty">Pemeriksaan sistem hanya dapat dibuka oleh admin. Pengelola dan pimpinan dapat memakai "Periksa data" di setiap modul.</div>';
     return;
   }
   $('#view').innerHTML=`<div class="row"><div><h1>Pemeriksaan Sistem</h1><div class="sub">Hanya membaca data dan tidak mengubah apa pun.</div></div>
-    <div class="actions noprint"><button id="pkRun">↻ Jalankan ulang</button><button id="pkCsv">⬇ Unduh laporan (CSV)</button></div></div>
+    <div class="actions noprint"><button id="pkRun">↻ Jalankan ulang</button><button id="pkCsv">⬇ Unduh laporan (CSV)</button><button id="pkKamus">⬇ Kamus Data (.md)</button></div></div>
     <div class="card tbl" id="pkTbl"><div class="empty">Memeriksa…</div></div>`;
   $('#pkRun').onclick=()=>renderPeriksa();
   $('#pkCsv').onclick=exportPeriksa;
+  $('#pkKamus').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([buatKamus()],{type:'text/markdown;charset=utf-8'})); a.download='KAMUS_DATA.md'; a.click(); };
   PERIKSA_LAST=await sysChecks();
   const box=$('#pkTbl'); if(!box)return;
   const pill=s=>s==='OK'?'s-Selesai':s==='Gagal'?'s-Terlambat':'s-Draft';
@@ -1318,6 +1403,45 @@ function renderUji(){
     const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\uFEFF'+['Grup,Modul,Skenario,Hasil',...rows].join('\r\n')],{type:'text/csv;charset=utf-8'}));
     a.download=`ARKA_daftar_uji_${today()}.csv`; a.click();
   };
+}
+
+/* ============ PENGGUNA & HAK AKSES (admin, lewat aplikasi) ============ */
+async function renderPengguna(){
+  if(!CLOUD){ $('#view').innerHTML='<div class="empty">Pengelolaan pengguna hanya tersedia dalam mode cloud.</div>'; return }
+  if(ARKA_ROLE!=='admin'){ $('#view').innerHTML='<div class="empty">Hanya admin yang dapat mengelola pengguna.</div>'; return }
+  $('#view').innerHTML=`<div class="row"><div><h1>Pengguna & Hak Akses</h1><div class="sub">Atur peran dan unit kerja setiap pengguna.</div></div>
+    <div class="actions noprint"><button id="pgRefresh">↻ Segarkan</button></div></div>
+    <div class="card" style="font-size:13px"><b>Menambah pengguna baru</b>
+      <ol style="margin:8px 0 0 18px;padding:0">
+        <li style="margin:4px 0">Di Supabase Dashboard, buka Authentication &gt; Users &gt; Invite user, lalu masukkan email pegawai.</li>
+        <li style="margin:4px 0">Kembali ke halaman ini dan klik Segarkan. Pengguna baru muncul otomatis tanpa peran.</li>
+        <li style="margin:4px 0">Tetapkan peran dan unit kerja di bawah. Pengguna tanpa peran belum bisa masuk.</li>
+      </ol></div>
+    <div class="card tbl" id="pgTbl"><div class="empty">Memuat…</div></div>`;
+  $('#pgRefresh').onclick=()=>renderPengguna();
+  const {data,error}=await sb.from('profiles').select('id,email,nama,peran,unit').order('email');
+  const box=$('#pgTbl'); if(!box)return;
+  if(error){ box.innerHTML=`<div class="empty">Gagal memuat: ${esc(error.message)}</div>`; return }
+  box.innerHTML=`<table><tr><th>Email</th><th>Nama</th><th>Peran</th><th>Unit kerja</th><th></th></tr>${data.map(p=>`<tr>
+    <td>${esc(p.email||'')}</td>
+    <td><input id="n_${p.id}" value="${esc(p.nama||'')}" style="min-width:140px"></td>
+    <td><select id="r_${p.id}" onchange="pgPeranUbah('${p.id}')"><option value="">— belum diberi —</option>${['admin','pengelola','pimpinan'].map(x=>`<option value="${x}" ${p.peran===x?'selected':''}>${x}</option>`).join('')}</select></td>
+    <td><select id="u_${p.id}" ${p.peran==='pengelola'?'':'disabled'}><option value="">—</option>${Object.entries(UNITS).map(([k,v])=>`<option value="${k}" ${p.unit===k?'selected':''}>${esc(v)}</option>`).join('')}</select></td>
+    <td><button onclick="pgSimpan('${p.id}')">Simpan</button></td></tr>`).join('')}</table>`;
+}
+function pgPeranUbah(id){
+  const r=$('#r_'+id).value, u=$('#u_'+id);
+  u.disabled=r!=='pengelola'; if(r!=='pengelola')u.value='';
+}
+async function pgSimpan(id){
+  const peran=$('#r_'+id).value||null, unit=$('#u_'+id).value||null, nama=$('#n_'+id).value.trim();
+  if(peran==='pengelola'&&!unit){ toast('Pengelola wajib memiliki unit kerja'); return }
+  const {data:{user}}=await sb.auth.getUser();
+  if(user&&user.id===id&&peran!=='admin'&&!confirm('Anda mengubah peran akun Anda sendiri. Lanjutkan?')) return;
+  const {error}=await sb.from('profiles').update({nama:nama||null,peran,unit:peran==='pengelola'?unit:null}).eq('id',id);
+  if(error){ toast('Gagal menyimpan: '+error.message); return }
+  toast('Perubahan tersimpan');
+  renderPengguna();
 }
 
 /* ============ EVENT ============ */
