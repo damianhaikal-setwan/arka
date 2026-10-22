@@ -229,8 +229,8 @@ const STD=[['kode','Kode'],['nama','Nama / Uraian'],['unit','Unit / Bidang'],['t
 const FIELDS={
  pegawai:[['nip','NIP'],['nama','Nama'],['jabatan','Jabatan'],['unit','Unit Kerja'],['golongan','Golongan'],['status','Status','sel',['Aktif','Cuti','Pensiun']]],
  anggota:[['nama','Nama'],['fraksi','Fraksi','rel','fraksi'],['komisi','Komisi','rel','komisi'],['dapil','Daerah Pemilihan'],['jabatan','Jabatan'],['status','Status','sel',['Aktif','Antar Waktu','Nonaktif']]],
- fraksi:[['kode','Kode'],['nama','Nama Fraksi'],['ketua','Ketua'],['jumlah','Jumlah Anggota','hit',['anggota','fraksi']],['status','Status','sel',['Aktif','Nonaktif']]],
- komisi:[['kode','Kode'],['nama','Nama Komisi'],['ketua','Ketua'],['mitra','Mitra Kerja Utama'],['jumlah','Jumlah Anggota','hit',['anggota','komisi']],['status','Status','sel',['Aktif','Nonaktif']]],
+ fraksi:[['kode','Kode'],['nama','Nama Fraksi'],['ketua','Ketua','rel','anggota',{via:'fraksi',opsional:true}],['jumlah','Jumlah Anggota Aktif','hit',['anggota','fraksi',['Nonaktif']]],['status','Status','sel',['Aktif','Nonaktif']]],
+ komisi:[['kode','Kode'],['nama','Nama Komisi'],['ketua','Ketua','rel','anggota',{via:'komisi',opsional:true}],['mitra','Mitra Kerja Utama'],['jumlah','Jumlah Anggota Aktif','hit',['anggota','komisi',['Nonaktif']]],['status','Status','sel',['Aktif','Nonaktif']]],
  program:[['kode','Kode Program'],['nama','Nama Program'],['unit','Unit Penanggung Jawab'],['pagu','Pagu (Rp)','num'],['realisasi','Realisasi (Rp)','num'],['status','Status','sel',['Berjalan','Selesai','Terlambat']]],
  iku:[['kode','Kode IKU'],['nama','Indikator'],['unit','Unit'],['target','Target','num'],['capaian','Realisasi','num'],['satuan','Satuan'],['status','Status','sel',['Tercapai','Proses','Tertunda']]]
 };
@@ -258,8 +258,8 @@ Object.assign(FIELDS,{
 const SEED={
  pegawai:[{nip:'198604122010011003',nama:'Hendra Wijaya, S.H.',jabatan:'Kepala Bagian Umum',unit:'Bagian Umum dan Keuangan',golongan:'III/c',status:'Aktif'},{nip:'197811052003122005',nama:'Yuliana Sari, S.E.',jabatan:'Kasubag Keuangan',unit:'Bagian Umum dan Keuangan',golongan:'III/b',status:'Aktif'},{nip:'199005202015031002',nama:'Rahmat Hidayat, S.Kom.',jabatan:'Analis Sistem Informasi',unit:'Bagian Persidangan dan Perundang-undangan',golongan:'III/a',status:'Aktif'},{nip:'198209142008022001',nama:'Maria Ulfah, S.Sos.',jabatan:'Analis Humas dan Protokol',unit:'Bagian Persidangan dan Perundang-undangan',golongan:'III/b',status:'Cuti'},{nip:'197505301999031004',nama:'Antonius Ayu, S.T.',jabatan:'Pengelola BMD',unit:'Bagian Umum dan Keuangan',golongan:'III/d',status:'Aktif'}],
  anggota:[{nama:'H. Ahmad Yani, S.Pd.',fraksi:'Fraksi Persatuan Pembangunan',komisi:'Komisi I',dapil:'Dapil I',jabatan:'Ketua DPRD',status:'Aktif'},{nama:'Siti Rahmawati, S.E.',fraksi:'Fraksi Golkar',komisi:'Komisi II',dapil:'Dapil II',jabatan:'Wakil Ketua I',status:'Aktif'},{nama:'Dedi Kurniawan',fraksi:'Fraksi Gerindra',komisi:'Komisi III',dapil:'Dapil III',jabatan:'Anggota',status:'Aktif'},{nama:'Ferry Ardiansyah',fraksi:'Fraksi NasDem',komisi:'Komisi IV',dapil:'Dapil I',jabatan:'Anggota',status:'Aktif'},{nama:'Lina Marlina',fraksi:'Fraksi PDI Perjuangan',komisi:'Komisi I',dapil:'Dapil II',jabatan:'Anggota',status:'Antar Waktu'}],
- fraksi:[{kode:'F-01',nama:'Fraksi Golkar',ketua:'Siti Rahmawati',jumlah:6,status:'Aktif'},{kode:'F-02',nama:'Fraksi Gerindra',ketua:'Dedi Kurniawan',jumlah:5,status:'Aktif'},{kode:'F-03',nama:'Fraksi PDI Perjuangan',ketua:'Lina Marlina',jumlah:4,status:'Aktif'},{kode:'F-04',nama:'Fraksi Persatuan Pembangunan',ketua:'H. Ahmad Yani',jumlah:3,status:'Aktif'},{kode:'F-05',nama:'Fraksi NasDem',ketua:'Ferry Ardiansyah',jumlah:1,status:'Aktif'}],
- komisi:[{kode:'K-I',nama:'Komisi I',ketua:'Dedi Kurniawan',mitra:'Bagian Hukum, Bagian Pemerintahan',jumlah:11,status:'Aktif'},{kode:'K-II',nama:'Komisi II',ketua:'Siti Rahmawati',mitra:'Bappeda, Dinas Pendapatan',jumlah:11,status:'Aktif'},{kode:'K-III',nama:'Komisi III',ketua:'Ferry Ardiansyah',mitra:'Dinas PUPR, Dinas Perhubungan',jumlah:11,status:'Aktif'},{kode:'K-IV',nama:'Komisi IV',ketua:'Lina Marlina',mitra:'Dinas Kesehatan, Dinas Pendidikan',jumlah:12,status:'Aktif'}],
+ fraksi:[{kode:'F-01',nama:'Fraksi Golkar',ketua:'Siti Rahmawati, S.E.',status:'Aktif'},{kode:'F-02',nama:'Fraksi Gerindra',ketua:'Dedi Kurniawan',status:'Aktif'},{kode:'F-03',nama:'Fraksi PDI Perjuangan',ketua:'Lina Marlina',status:'Aktif'},{kode:'F-04',nama:'Fraksi Persatuan Pembangunan',ketua:'H. Ahmad Yani, S.Pd.',status:'Aktif'},{kode:'F-05',nama:'Fraksi NasDem',ketua:'Ferry Ardiansyah',status:'Aktif'}],
+ komisi:[{kode:'K-I',nama:'Komisi I',ketua:'Lina Marlina',mitra:'Bagian Hukum, Bagian Pemerintahan',status:'Aktif'},{kode:'K-II',nama:'Komisi II',ketua:'Siti Rahmawati, S.E.',mitra:'Bappeda, Dinas Pendapatan',status:'Aktif'},{kode:'K-III',nama:'Komisi III',ketua:'Dedi Kurniawan',mitra:'Dinas PUPR, Dinas Perhubungan',status:'Aktif'},{kode:'K-IV',nama:'Komisi IV',ketua:'Ferry Ardiansyah',mitra:'Dinas Kesehatan, Dinas Pendidikan',status:'Aktif'}],
  program:[{kode:'1.01.01',nama:'Program Pelayanan Administrasi Perkantoran',unit:'Sekretariat DPRD',pagu:2450000000,realisasi:2118000000,status:'Berjalan'},{kode:'1.01.02',nama:'Program Peningkatan Sarana dan Prasarana Aparatur',unit:'Bagian Umum dan Keuangan',pagu:1180000000,realisasi:1075000000,status:'Berjalan'},{kode:'1.02.01',nama:'Program Penyediaan Layanan Dewan',unit:'Bagian Persidangan dan Perundang-undangan',pagu:3620000000,realisasi:2940000000,status:'Berjalan'},{kode:'1.03.01',nama:'Program Peningkatan Kapasitas Aparatur',unit:'Subbagian Tata Usaha dan Kepegawaian',pagu:620000000,realisasi:620000000,status:'Selesai'}],
  iku:[{kode:'IKU-01',nama:'Persentase rapat paripurna terlaksana tepat waktu',unit:'Bagian Persidangan dan Perundang-undangan',target:100,capaian:96,satuan:'%',status:'Proses'},{kode:'IKU-02',nama:'Persentase Perda yang dibahas sesuai Propemperda',unit:'Bagian Persidangan dan Perundang-undangan',target:90,capaian:92,satuan:'%',status:'Tercapai'},{kode:'IKU-03',nama:'Persentase aduan masyarakat ditindaklanjuti',unit:'Bagian Persidangan dan Perundang-undangan',target:95,capaian:88,satuan:'%',status:'Proses'},{kode:'IKU-04',nama:'Nilai SAKIP Sekretariat',unit:'Sekretariat DPRD',target:80,capaian:78.5,satuan:'Nilai',status:'Proses'},{kode:'IKU-05',nama:'Persentase BMD tercatat dan terverifikasi',unit:'Bagian Umum dan Keuangan',target:100,capaian:100,satuan:'%',status:'Tercapai'}]
 };
@@ -766,7 +766,7 @@ function drawTable(id){
 }
 function cellVal(r,c){
   const [k,,ty,opt]=c, v=r[k];
-  if(ty==='hit')return fmt(dbAll(opt[0]).filter(x=>x[opt[1]]===r.id).length);
+  if(ty==='hit')return fmt(dbAll(opt[0]).filter(x=>x[opt[1]]===r.id&&!(opt[2]||[]).includes(x.status)).length);
   if(k==='status')return `<span class="pill s-${esc(v)}">${esc(v)}</span>`;
   if(ty==='rel'){const t=dbAll(opt).find(x=>x.id===v);return t?esc(t.nama||t.kode):'<span class="sub">—</span>'}
   if(ty==='num')return fmt(v);
@@ -785,12 +785,12 @@ function openForm(t,id){
   const row=id?dbAll(t).find(r=>r.id===id):{};
   $('#modal').innerHTML=`<div class="row"><h1 style="font-size:17px">${id?'Ubah':'Tambah'} · ${esc(LABEL[t])}</h1><button onclick="closeM()">✕</button></div>
   <form class="form" style="margin-top:12px" id="f">
-  ${cols.filter(c=>c[2]!=='hit').map(([k,l,ty,opt])=>{
+  ${cols.filter(c=>c[2]!=='hit').map(([k,l,ty,opt,ex])=>{
     const v=row[k]??'';
     const full=ty==='ta'||k==='keterangan'?'full':'';
     let inp;
     if(ty==='sel')inp=`<select name="${k}">${opt.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
-    else if(ty==='rel')inp=`<select name="${k}"><option value="">— pilih —</option>${dbAll(opt).map(x=>`<option value="${x.id}" ${x.id===v?'selected':''}>${esc(x.nama||x.kode)}</option>`).join('')}</select>`;
+    else if(ty==='rel'){ let lst=dbAll(opt), lbl=l; if(ex&&ex.via&&id){ const m=lst.filter(x=>x[ex.via]===id); if(m.length){lst=m;lbl=l+' (anggota '+LABEL[t]+' ini)'} } l=lbl; inp=`<select name="${k}"><option value="">— pilih —</option>${lst.map(x=>`<option value="${x.id}" ${x.id===v?'selected':''}>${esc(x.nama||x.kode)}</option>`).join('')}</select>`; }
     else if(ty==='ta')inp=`<textarea name="${k}" rows="3">${esc(v)}</textarea>`;
     else inp=`<input name="${k}" type="${ty==='num'?'number':ty==='date'?'date':'text'}" value="${esc(v)}">`;
     return `<label class="${full}">${esc(l)}${inp}</label>`}).join('')}
@@ -807,7 +807,16 @@ function openForm(t,id){
     closeM(); toast('Data tersimpan'); renderModule(t);
   };
 }
-function delRow(t,id){ if(!confirm('Hapus record ini? Tindakan tercatat di audit trail.'))return; dbDelete(t,id); toast('Record dihapus'); renderModule(t) }
+function refsTo(t,id){
+  const out=[];
+  DATA_MODS.forEach(t2=>(FIELDS[t2]||STD).forEach(c=>{
+    if(c[2]!=='rel'||c[3]!==t)return;
+    const n=dbAll(t2).filter(r=>r[c[0]]===id&&!(t2===t&&r.id===id)).length;
+    if(n)out.push(LABEL[t2]+' ('+n+' record, kolom '+c[1]+')');
+  }));
+  return out;
+}
+function delRow(t,id){ const used=refsTo(t,id); if(used.length){ alert('Record ini tidak dapat dihapus karena masih dipakai oleh:\n- '+used.join('\n- ')+'\n\nPindahkan atau hapus data tersebut terlebih dahulu.'); return } if(!confirm('Hapus record ini? Tindakan tercatat di audit trail.'))return; dbDelete(t,id); toast('Record dihapus'); renderModule(t) }
 function closeM(){ $('#ov').classList.remove('show') }
 
 /* ============ EXPORT ============ */
@@ -951,7 +960,8 @@ async function arkaDelete(t, id) {
 }
 
 function showLogin(){
-  ARKA_ROLE=null; ARKA_UNIT=null;
+  ARKA_ROLE=null; ARKA_NAMA=''; ARKA_UNIT=null;
+  PG_CURRENT_USER_ID=null; PG_USERS=[]; PG_EDITING=null; PG_FORM_OPEN=false;
   Object.keys(TABLES).forEach(k=>delete TABLES[k]);
   $('#out').style.display='none';
   $('#login').classList.add('show');
@@ -1062,7 +1072,7 @@ const NONDATA=['dash','evidence','panduan','periksa','uji','pengguna'];
 const isDataMod=id=>!NONDATA.includes(id)&&!id.startsWith('an-');
 const DATA_MODS=MENU.flatMap(g=>g.items.map(([id])=>id)).filter(isDataMod);
 const GROUP_OF={}; MENU.forEach((g,gi)=>g.items.forEach(([id])=>GROUP_OF[id]=gi));
-const deps=t=>[...new Set((FIELDS[t]||STD).filter(c=>c[2]==='rel'&&c[3]!==t&&isDataMod(c[3])).map(c=>c[3]))];
+const deps=t=>[...new Set((FIELDS[t]||STD).filter(c=>c[2]==='rel'&&c[3]!==t&&isDataMod(c[3])&&!(c[4]&&c[4].opsional)).map(c=>c[3]))];
 const downs=t=>DATA_MODS.filter(x=>x!==t&&deps(x).includes(t));
 const LVL={};
 function lvl(t){ if(LVL[t]!==undefined)return LVL[t]; LVL[t]=0; LVL[t]=1+Math.max(-1,...deps(t).map(lvl)); return LVL[t]; }
@@ -1238,7 +1248,7 @@ function sidikStruktur(){
 function buatKamus(){
   const cn=k=>k.replace(/([A-Z])/g,'_$1').toLowerCase();
   const tb=t=>t.replace(/-/g,'_');
-  const tipe=c=>c[2]==='hit'?'dihitung otomatis dari '+tb(c[3][0]):c[2]==='rel'?`relasi ke \`${tb(c[3])}\``:c[2]==='num'?'angka':c[2]==='date'?'tanggal':c[2]==='sel'?'pilihan: '+c[3].join(', '):'teks';
+  const tipe=c=>c[2]==='hit'?'dihitung otomatis dari '+tb(c[3][0]):c[2]==='rel'?`relasi ke \`${tb(c[3])}\`${c[4]&&c[4].opsional?' (opsional)':''}`:c[2]==='num'?'angka':c[2]==='date'?'tanggal':c[2]==='sel'?'pilihan: '+c[3].join(', '):'teks';
   const L=[];
   L.push('# Kamus Data ARKA','',
     `- **Sidik struktur:** \`${sidikStruktur()}\``,
@@ -1288,12 +1298,13 @@ function auditModule(t){
   const cols=FIELDS[t]||STD, rows=dbAll(t), out=[], kodeCount={};
   rows.forEach((r,i)=>{
     const ref=r.kode||r.nama||('baris '+(i+1));
-    cols.forEach(([k,lbl,ty,opt])=>{
+    cols.forEach(([k,lbl,ty,opt,ex])=>{
       const v=r[k], kosong=v===undefined||v===null||v==='';
       const add=(tingkat,pesan)=>out.push({tingkat,ref,kol:lbl,pesan});
       if(ty==='rel'){
         if(kosong) add('Peringatan','belum dihubungkan ke '+LABEL[opt]);
         else if(!dbAll(opt).some(x=>x.id===v)) add('Kritis','relasi ke '+LABEL[opt]+' tidak ditemukan');
+        else if(ex&&ex.via){ const m=dbAll(opt).find(x=>x.id===v); if(m&&m[ex.via]!==r.id) add('Peringatan',(m.nama||'Anggota')+' bukan anggota '+LABEL[t]+' ini'); }
       } else if(ty==='sel'){
         if(kosong) add('Peringatan','status belum diisi');
         else if(!opt.includes(v)) add('Kritis','nilai "'+v+'" tidak termasuk pilihan');
@@ -1405,43 +1416,178 @@ function renderUji(){
   };
 }
 
-/* ============ PENGGUNA & HAK AKSES (admin, lewat aplikasi) ============ */
-async function renderPengguna(){
-  if(!CLOUD){ $('#view').innerHTML='<div class="empty">Pengelolaan pengguna hanya tersedia dalam mode cloud.</div>'; return }
-  if(ARKA_ROLE!=='admin'){ $('#view').innerHTML='<div class="empty">Hanya admin yang dapat mengelola pengguna.</div>'; return }
-  $('#view').innerHTML=`<div class="row"><div><h1>Pengguna & Hak Akses</h1><div class="sub">Atur peran dan unit kerja setiap pengguna.</div></div>
-    <div class="actions noprint"><button id="pgRefresh">↻ Segarkan</button></div></div>
-    <div class="card" style="font-size:13px"><b>Menambah pengguna baru</b>
-      <ol style="margin:8px 0 0 18px;padding:0">
-        <li style="margin:4px 0">Di Supabase Dashboard, buka Authentication &gt; Users &gt; Invite user, lalu masukkan email pegawai.</li>
-        <li style="margin:4px 0">Kembali ke halaman ini dan klik Segarkan. Pengguna baru muncul otomatis tanpa peran.</li>
-        <li style="margin:4px 0">Tetapkan peran dan unit kerja di bawah. Pengguna tanpa peran belum bisa masuk.</li>
-      </ol></div>
-    <div class="card tbl" id="pgTbl"><div class="empty">Memuat…</div></div>`;
-  $('#pgRefresh').onclick=()=>renderPengguna();
-  const {data,error}=await sb.from('profiles').select('id,email,nama,peran,unit').order('email');
+/* ============ PENGGUNA & HAK AKSES (admin melalui Edge Function) ============ */
+let PG_USERS = [];
+let PG_EDITING = null;
+let PG_FORM_OPEN = false;
+let PG_BUSY = false;
+const PG_ROLES = ['admin','pengelola','pimpinan'];
+
+function pgMsgFromError(error, fallback='Operasi gagal') {
+  return error?.message || error?.error_description || fallback;
+}
+async function pgCall(action, payload={}) {
+  const {data,error}=await sb.functions.invoke('arka-users-admin',{body:{action,...payload}});
+  if(error) {
+    let detail=error.message||'Permintaan ke layanan pengelolaan pengguna gagal.';
+    try { const body=await error.context?.json?.(); if(body?.error) detail=body.error; } catch(_) {}
+    throw new Error(detail);
+  }
+  if(data?.error) throw new Error(data.error);
+  return data;
+}
+function pgRoleOptions(value) {
+  return PG_ROLES.map(r=>`<option value="${r}" ${value===r?'selected':''}>${r==='admin'?'Admin':r==='pengelola'?'Pengelola unit':'Pimpinan (baca saja)'}</option>`).join('');
+}
+function pgUnitOptions(value) {
+  return `<option value="">— Pilih unit kerja —</option>`+Object.entries(UNITS).map(([k,v])=>`<option value="${k}" ${value===k?'selected':''}>${esc(v)}</option>`).join('');
+}
+async function renderPengguna() {
+  if(!CLOUD) {
+    $('#view').innerHTML=`<div><h1>Pengguna & Hak Akses</h1><div class="sub">Pengelolaan akun membutuhkan mode cloud dan Edge Function yang terpasang.</div></div>
+      <div class="card"><b>Mode lokal aktif.</b><p class="sub">Pengguna tidak dapat ditambahkan, diedit, atau dihapus secara aman dari penyimpanan lokal. Isi konfigurasi Supabase dan pasang fungsi server <code>arka-users-admin</code> terlebih dahulu.</p></div>`;
+    return;
+  }
+  if(ARKA_ROLE!=='admin') {
+    $('#view').innerHTML='<div class="empty">Hanya admin yang dapat mengelola pengguna.</div>';
+    return;
+  }
+  $('#view').innerHTML=`<div class="row"><div><h1>Pengguna & Hak Akses</h1><div class="sub">Kelola akun login, profil, peran, dan unit kerja melalui ARKA.</div></div>
+    <div class="toolbar noprint"><button id="pgRefresh">↻ Segarkan</button><button id="pgAdd" class="btn-p">＋ Tambah pengguna</button></div></div>
+    <div class="kpis" id="pgStats"></div>
+    <div class="card" id="pgFormBox" style="display:none"></div>
+    <div class="card"><div class="row"><div><b>Daftar pengguna</b><div class="sub">Akun yang belum memiliki profil juga ditampilkan agar admin dapat menetapkan hak aksesnya.</div></div><span class="pill" id="pgCount">Memuat…</span></div>
+      <div class="toolbar" style="margin-top:12px"><input id="pgSearch" placeholder="Cari email, nama, peran, atau unit…" style="max-width:360px"><select id="pgRoleFilter" aria-label="Filter peran" style="max-width:210px"><option value="">Semua peran</option><option value="admin">Admin</option><option value="pengelola">Pengelola</option><option value="pimpinan">Pimpinan</option><option value="none">Belum diberi peran</option></select></div>
+      <div class="tbl" id="pgTbl" style="margin-top:12px"><div class="empty">Memuat pengguna…</div></div>
+    </div>
+    <div class="hint">Pembuatan akun mengirim undangan melalui email. Penghapusan akun menghapus akun Authentication dan profilnya; tindakan ini tidak dapat dibatalkan.</div>`;
+  $('#pgRefresh').onclick=()=>loadPgUsers();
+  $('#pgAdd').onclick=()=>{PG_EDITING=null;PG_FORM_OPEN=true;pgRenderForm();};
+  $('#pgSearch').oninput=pgRenderTable;
+  $('#pgRoleFilter').onchange=pgRenderTable;
+  await loadPgUsers();
+  if(PG_FORM_OPEN) pgRenderForm();
+}
+async function loadPgUsers() {
   const box=$('#pgTbl'); if(!box)return;
-  if(error){ box.innerHTML=`<div class="empty">Gagal memuat: ${esc(error.message)}</div>`; return }
-  box.innerHTML=`<table><tr><th>Email</th><th>Nama</th><th>Peran</th><th>Unit kerja</th><th></th></tr>${data.map(p=>`<tr>
-    <td>${esc(p.email||'')}</td>
-    <td><input id="n_${p.id}" value="${esc(p.nama||'')}" style="min-width:140px"></td>
-    <td><select id="r_${p.id}" onchange="pgPeranUbah('${p.id}')"><option value="">— belum diberi —</option>${['admin','pengelola','pimpinan'].map(x=>`<option value="${x}" ${p.peran===x?'selected':''}>${x}</option>`).join('')}</select></td>
-    <td><select id="u_${p.id}" ${p.peran==='pengelola'?'':'disabled'}><option value="">—</option>${Object.entries(UNITS).map(([k,v])=>`<option value="${k}" ${p.unit===k?'selected':''}>${esc(v)}</option>`).join('')}</select></td>
-    <td><button onclick="pgSimpan('${p.id}')">Simpan</button></td></tr>`).join('')}</table>`;
+  box.innerHTML='<div class="empty">Memuat pengguna…</div>';
+  const refresh=$('#pgRefresh'); if(refresh)refresh.disabled=true;
+  try {
+    const result=await pgCall('list');
+    PG_USERS=Array.isArray(result.users)?result.users:[];
+    const total=PG_USERS.length, assigned=PG_USERS.filter(u=>u.peran).length;
+    $('#pgStats').innerHTML=[kpi('Total akun',fmt(total),'akun Authentication'),kpi('Sudah diberi peran',fmt(assigned),'profil akses tersedia'),kpi('Belum diberi peran',fmt(total-assigned),'belum dapat memakai aplikasi')].join('');
+    $('#pgCount').textContent=`${total} akun`;
+    pgRenderTable();
+    if(PG_EDITING && !PG_USERS.some(u=>u.id===PG_EDITING.id)){PG_EDITING=null;PG_FORM_OPEN=false;}
+  } catch(e) {
+    box.innerHTML=`<div class="empty">Gagal memuat pengguna: ${esc(pgMsgFromError(e))}<div style="margin-top:8px"><button onclick="loadPgUsers()">Coba lagi</button></div></div>`;
+    toast('Gagal memuat pengguna: '+pgMsgFromError(e));
+  } finally { if(refresh)refresh.disabled=false; }
 }
-function pgPeranUbah(id){
-  const r=$('#r_'+id).value, u=$('#u_'+id);
-  u.disabled=r!=='pengelola'; if(r!=='pengelola')u.value='';
+function pgRenderTable() {
+  const box=$('#pgTbl'); if(!box)return;
+  const q=($('#pgSearch')?.value||'').trim().toLowerCase();
+  const rf=$('#pgRoleFilter')?.value||'';
+  const shown=PG_USERS.filter(u=>{
+    const hay=[u.email,u.nama,u.peran,UNITS[u.unit]||u.unit].join(' ').toLowerCase();
+    return (!q||hay.includes(q))&&(!rf||(rf==='none'?!u.peran:u.peran===rf));
+  });
+  if(!shown.length){box.innerHTML='<div class="empty">Tidak ada pengguna yang cocok.</div>';return;}
+  box.innerHTML=`<table><thead><tr><th>Email</th><th>Nama</th><th>Peran</th><th>Unit kerja</th><th>Status akun</th><th>Aksi</th></tr></thead><tbody>${shown.map(u=>{
+    const confirmed=!!u.email_confirmed_at;
+    const status=!confirmed?'Menunggu konfirmasi email':u.peran?'Aktif · hak akses ditetapkan':'Belum diberi peran';
+    const role=u.peran==='admin'?'Admin':u.peran==='pengelola'?'Pengelola':u.peran==='pimpinan'?'Pimpinan':'—';
+    const unit=u.unit?(UNITS[u.unit]||u.unit):'—';
+    const self=u.id===PG_CURRENT_USER_ID;
+    const statusClass=confirmed&&u.peran?'s-Aktif':'s-Draft';
+    return `<tr><td><b>${esc(u.email||'(email tidak tersedia)')}</b><div class="hint">ID: ${esc(u.id)}</div></td><td>${esc(u.nama||'—')}</td><td>${esc(role)}</td><td>${esc(unit)}</td><td><span class="pill ${statusClass}">${esc(status)}</span></td><td><div class="toolbar"><button onclick="pgEdit('${esc(u.id)}')">Edit</button><button class="btn-d" ${self?'disabled title="Akun yang sedang digunakan tidak dapat dihapus dari sesi ini"':''} onclick="pgDelete('${esc(u.id)}')">Hapus</button></div></td></tr>`;
+  }).join('')}</tbody></table>`;
 }
-async function pgSimpan(id){
-  const peran=$('#r_'+id).value||null, unit=$('#u_'+id).value||null, nama=$('#n_'+id).value.trim();
-  if(peran==='pengelola'&&!unit){ toast('Pengelola wajib memiliki unit kerja'); return }
+let PG_CURRENT_USER_ID=null;
+async function pgGetCurrentUserId(){
+  if(PG_CURRENT_USER_ID)return PG_CURRENT_USER_ID;
   const {data:{user}}=await sb.auth.getUser();
-  if(user&&user.id===id&&peran!=='admin'&&!confirm('Anda mengubah peran akun Anda sendiri. Lanjutkan?')) return;
-  const {error}=await sb.from('profiles').update({nama:nama||null,peran,unit:peran==='pengelola'?unit:null}).eq('id',id);
-  if(error){ toast('Gagal menyimpan: '+error.message); return }
-  toast('Perubahan tersimpan');
-  renderPengguna();
+  PG_CURRENT_USER_ID=user?.id||null;
+  return PG_CURRENT_USER_ID;
+}
+async function pgEdit(id) {
+  const current=await pgGetCurrentUserId();
+  PG_EDITING=PG_USERS.find(u=>u.id===id)||null;
+  if(!PG_EDITING){toast('Pengguna tidak ditemukan. Segarkan daftar.');return;}
+  PG_FORM_OPEN=true;
+  pgRenderForm();
+  const box=$('#pgFormBox'); if(box)box.scrollIntoView({behavior:'smooth',block:'start'});
+  if(current===id){const hint=$('#pgSelfHint');if(hint)hint.style.display='block';}
+}
+function pgRenderForm() {
+  const box=$('#pgFormBox'); if(!box)return;
+  if(!PG_FORM_OPEN){box.style.display='none';box.innerHTML='';return;}
+  const u=PG_EDITING||{}; const editing=!!u.id;
+  box.style.display='block';
+  box.innerHTML=`<div class="row"><div><h2 style="margin:0;font-size:18px">${editing?'Edit pengguna':'Tambah pengguna'}</h2><div class="sub">${editing?'Perbarui email, nama, peran, atau unit kerja.':'Akun baru akan menerima undangan melalui email untuk masuk ke ARKA.'}</div></div><button type="button" onclick="pgCloseForm()">Tutup</button></div>
+    <form id="pgUserForm" style="margin-top:14px"><div class="form">
+      <label>Email<input id="pgEmail" type="email" required maxlength="254" autocomplete="off" value="${esc(u.email||'')}" placeholder="nama@instansi.go.id"></label>
+      <label>Nama lengkap<input id="pgNama" required maxlength="160" value="${esc(u.nama||'')}" placeholder="Nama pengguna"></label>
+      <label>Peran<select id="pgPeran" required onchange="pgRoleChanged()"><option value="">— Pilih peran —</option>${pgRoleOptions(u.peran||'pengelola')}</select></label>
+      <label>Unit kerja<select id="pgUnit" onchange="" ${((u.peran||'pengelola')==='pengelola')?'':'disabled'}>${pgUnitOptions(u.unit||'')}</select><span class="hint">Wajib diisi untuk peran Pengelola; tidak berlaku untuk Admin/Pimpinan.</span></label>
+    </div>
+    <div id="pgSelfHint" class="card" style="display:none;margin-top:12px;font-size:12px">Anda sedang mengubah akun sendiri. Perubahan peran akan memengaruhi hak akses sesi Anda.</div>
+    ${!editing?'<div class="hint" style="margin-top:10px">Kata sandi tidak diminta atau disimpan oleh ARKA. Pengguna menerima email undangan dari Supabase.</div>':''}
+    <div class="toolbar" style="margin-top:14px"><button type="submit" class="btn-p" id="pgSaveBtn">${editing?'Simpan perubahan':'Kirim undangan & buat akun'}</button><button type="button" onclick="pgCloseForm()">Batal</button></div></form>`;
+  $('#pgUserForm').onsubmit=pgSave;
+}
+function pgRoleChanged(){
+  const role=$('#pgPeran')?.value, unit=$('#pgUnit');
+  if(!unit)return;
+  unit.disabled=role!=='pengelola';
+  if(role!=='pengelola')unit.value='';
+}
+function pgCloseForm(){PG_FORM_OPEN=false;PG_EDITING=null;pgRenderForm();}
+async function pgSave(e) {
+  e.preventDefault(); if(PG_BUSY)return;
+  const email=$('#pgEmail').value.trim().toLowerCase();
+  const nama=$('#pgNama').value.trim();
+  const peran=$('#pgPeran').value;
+  const unit=$('#pgUnit').value||null;
+  const editing=!!PG_EDITING?.id;
+  if(!email||!nama||!PG_ROLES.includes(peran)){toast('Email, nama, dan peran wajib diisi.');return;}
+  if(peran==='pengelola'&&!unit){toast('Pengelola wajib memiliki unit kerja.');return;}
+  const currentId=await pgGetCurrentUserId();
+  if(editing&&PG_EDITING.id===currentId&&peran!=='admin'&&!confirm('Anda akan mengubah peran akun Anda sendiri. Lanjutkan?'))return;
+  const btn=$('#pgSaveBtn'); PG_BUSY=true; if(btn){btn.disabled=true;btn.textContent=editing?'Menyimpan…':'Membuat akun…';}
+  try {
+    const changedSelf=editing&&PG_EDITING.id===currentId&&(peran!=='admin'||PG_EDITING.email!==email);
+    if(editing) {
+      await pgCall('update',{id:PG_EDITING.id,email,nama,peran,unit:peran==='pengelola'?unit:null});
+      toast('Data pengguna berhasil diperbarui.');
+    } else {
+      await pgCall('create',{email,nama,peran,unit:peran==='pengelola'?unit:null});
+      toast('Akun berhasil dibuat. Undangan dikirim jika konfigurasi email Supabase aktif.');
+    }
+    PG_FORM_OPEN=false;PG_EDITING=null;
+    if(changedSelf){
+      toast('Identitas atau peran akun sendiri berubah. Silakan masuk kembali.');
+      await sb.auth.signOut();
+      return;
+    }
+    await loadPgUsers();pgRenderForm();
+  } catch(err) {
+    toast((editing?'Gagal memperbarui':'Gagal membuat akun')+': '+pgMsgFromError(err));
+  } finally {PG_BUSY=false;if(btn)btn.disabled=false;}
+}
+async function pgDelete(id) {
+  const u=PG_USERS.find(x=>x.id===id); if(!u)return;
+  const currentId=await pgGetCurrentUserId();
+  if(id===currentId){toast('Akun yang sedang digunakan tidak dapat dihapus.');return;}
+  const label=(u.nama?u.nama+' · ':'')+(u.email||id);
+  if(!confirm(`Hapus akun ${label}?\n\nAkun login dan profil akses akan dihapus. Tindakan ini tidak dapat dibatalkan.`))return;
+  try {
+    await pgCall('delete',{id});
+    if(PG_EDITING?.id===id){PG_EDITING=null;PG_FORM_OPEN=false;pgRenderForm();}
+    toast('Akun pengguna berhasil dihapus.');
+    await loadPgUsers();
+  } catch(err) {toast('Gagal menghapus akun: '+pgMsgFromError(err));}
 }
 
 /* ============ EVENT ============ */
