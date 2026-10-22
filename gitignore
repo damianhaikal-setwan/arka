@@ -1,0 +1,21 @@
+# Rahasia dan konfigurasi pribadi
+.env
+.env.*
+*.key
+*.pem
+service_role*
+secrets*
+
+# Dependensi dan cache
+node_modules/
+.wrangler/
+.cache/
+
+# Berkas sistem
+.DS_Store
+Thumbs.db
+*.swp
+
+# Cadangan data lokal (berisi data asli)
+ARKA_cadangan_*.json
+ARKA_*.csv
