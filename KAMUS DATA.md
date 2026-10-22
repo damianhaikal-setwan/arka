@@ -1,6 +1,6 @@
 # Kamus Data ARKA
 
-- **Sidik struktur:** `2ac13c01`
+- **Sidik struktur:** `48f658ec`
 - **Dibuat:** 2026-10-22 dari ARKA.html
 - **Tabel modul:** 80, ditambah `audit_log`, `profiles`, dan `lampiran`
 - **Baris contoh saat dibuat:** 208
@@ -15,10 +15,10 @@
 | Peran | Baca | Tambah dan ubah | Hapus |
 |---|---|---|---|
 | admin | semua | semua | semua |
-| operator | semua | semua | tidak |
-| pimpinan | semua, kecuali `bk` dan `pengaduan` | tidak | tidak |
+| pengelola (per unit) | semua, kecuali modul yang dibatasi (lihat Pembagian unit) | hanya modul unitnya | tidak |
+| pimpinan (Sekretaris Dewan) | semua | tidak | tidak |
 
-Tabel `bk` dan `pengaduan` hanya dapat dibaca admin dan operator. Lampiran mengikuti aturan yang sama.
+Pengelola hanya dapat membaca modul `bk` dari unit Fasilitasi dan `pengaduan` dari unit Umum dan Keuangan, selain admin dan pimpinan.
 
 ## Tabel sistem
 | Tabel | Fungsi |
@@ -26,6 +26,12 @@ Tabel `bk` dan `pengaduan` hanya dapat dibaca admin dan operator. Lampiran mengi
 | `audit_log` | jejak perubahan (aksi, modul, referensi, pengguna, waktu) |
 | `profiles` | peran pengguna (id, nama, peran) |
 | `lampiran` | catatan berkas; berkas tersimpan di bucket `arka-lampiran` |
+| `modul_akses` | pemetaan modul ke unit pengelola dan pembatasan baca |
+
+## Pembagian unit (Perbup Kapuas Hulu Nomor 57 Tahun 2021)
+- **Bagian Umum dan Keuangan:** Pegawai, Anggota DPRD, Fraksi, Tenaga Ahli, Program, Kegiatan, Sub Kegiatan, Sasaran, IKU, IKI, RPJMD, Renstra, Renja, Cascading, Pohon Kinerja, Perjanjian Kinerja, Rencana Aksi, IKU (Kinerja), IKI (Kinerja), Monitoring, Evaluasi, Persuratan, Arsip, Perjalanan Dinas, Kepegawaian, Rumah Tangga, Kendaraan, Anggaran, SPJ, Perencanaan, Inventaris, Pemeliharaan, Mutasi, Penghapusan, Rekonsiliasi, Pengaduan
+- **Bagian Persidangan dan Perundang-undangan:** Komisi, Alat Kelengkapan DPRD, Regulasi, Agenda, Jadwal, Rapat, Komisi, Bapemperda, Paripurna, Risalah, Notulen, Keputusan, Propemperda, Ranperda, Naskah Akademik, DIM, Harmonisasi, JDIH DPRD, Hearing, Audiensi, Berita, Publikasi, Dokumentasi, Media Monitoring, Protokoler
+- **Bagian Fasilitasi Penganggaran dan Pengawasan:** Mitra Kerja, Badan Anggaran, Badan Kehormatan, KUA, PPAS, APBD, APBDP, Laporan Semester, Pertanggungjawaban, Monitoring OPD, Monitoring Program, Monitoring Proyek, LKPJ, Temuan, Rekomendasi, Tindak Lanjut, Reses, Pokir, Aspirasi Digital
 
 ## Halaman tanpa tabel
 Dashboard Eksekutif, Panduan Input, Pemeriksaan Sistem, Daftar Uji, Evidence Center, dan seluruh Analytics Center membaca data dari tabel modul dan tidak memiliki tabel sendiri.
