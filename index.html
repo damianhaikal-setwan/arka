@@ -141,6 +141,9 @@ body.collapsed #navq{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
+/* Versi aplikasi dipakai pada laporan Pemeriksaan Sistem dan Daftar Uji. */
+const ARKA_APP_VERSION = '19.0.0';
+const ARKA_BUILD_DATE = '2026-10-23';
 /* ===== KONFIGURASI SUPABASE =====
    Konfigurasi dapat diisi dari tombol ⚙ pada antarmuka dan disimpan pada browser.
    Hanya URL proyek, anon/publishable key, dan slug Edge Function yang boleh berada di browser.
@@ -166,7 +169,7 @@ const UNITS = {
 };
 /* Unit yang mengelola (menulis) setiap modul. Dasar pasal: lihat KAMUS_DATA.md */
 const UNIT_MODUL = {
-  pegawai:'umum_keuangan', anggota:'umum_keuangan', komisi:'persidangan', fraksi:'umum_keuangan', alat:'persidangan', tenaga:'umum_keuangan', mitra:'fasilitasi',
+  pegawai:'umum_keuangan', anggota:'umum_keuangan', komisi:'persidangan', fraksi:'umum_keuangan', alat:'persidangan', 'keanggotaan-akd':'persidangan', tenaga:'umum_keuangan', mitra:'fasilitasi',
   program:'umum_keuangan', kegiatan:'umum_keuangan', subkegiatan:'umum_keuangan', sasaran:'umum_keuangan', iku:'umum_keuangan', iki:'umum_keuangan', regulasi:'persidangan',
   rpjmd:'umum_keuangan', renstra:'umum_keuangan', renja:'umum_keuangan', cascading:'umum_keuangan', pohon:'umum_keuangan', perjanjian:'umum_keuangan', rencanaaksi:'umum_keuangan', ikuk:'umum_keuangan', ikik:'umum_keuangan', monitoring:'umum_keuangan', evaluasi:'umum_keuangan',
   persuratan:'umum_keuangan', arsip:'umum_keuangan', perjalanan:'umum_keuangan', kepegawaian:'umum_keuangan', rumahtangga:'umum_keuangan', kendaraan:'umum_keuangan', anggaran:'umum_keuangan', spj:'umum_keuangan',
@@ -184,6 +187,9 @@ const BACA_KHUSUS = { bk: ['fasilitasi'], pengaduan: ['umum_keuangan'] };
 const canWrite = t => !CLOUD || ARKA_ROLE === 'admin' || (ARKA_ROLE === 'pengelola' && UNIT_MODUL[t] === ARKA_UNIT);
 const canRead  = t => !CLOUD || ['admin','pimpinan'].includes(ARKA_ROLE) || (ARKA_ROLE === 'pengelola' && (!BACA_KHUSUS[t] || BACA_KHUSUS[t].includes(ARKA_UNIT)));
 const canDelete = () => !CLOUD || ARKA_ROLE === 'admin';
+/* Hapus khusus untuk master Komisi/Fraksi dapat dilakukan pengelola unit pemilik modul.
+   Modul lain tetap mengikuti kebijakan hapus admin. */
+const canDeleteRecord = t => canDelete() || (['komisi','fraksi'].includes(t) && canWrite(t));
 
 /* ============ DATA LAYER (siap migrasi Supabase: ganti fungsi db*) ============ */
 const $=(s,r=document)=>r.querySelector(s);
@@ -223,7 +229,7 @@ function logAudit(aksi,t,row){
 /* ============ KONFIGURASI MENU ============ */
 const MENU=[
  {g:'Dashboard',items:[['dash','Dashboard Eksekutif'],['panduan','Panduan Input'],['periksa','Pemeriksaan Sistem'],['uji','Daftar Uji'],['pengguna','Pengguna & Hak Akses']]},
- {g:'Master Data',items:[['pegawai','Pegawai'],['anggota','Anggota DPRD'],['komisi','Komisi'],['fraksi','Fraksi'],['alat','Alat Kelengkapan DPRD'],['tenaga','Tenaga Ahli'],['mitra','Mitra Kerja'],['program','Program'],['kegiatan','Kegiatan'],['subkegiatan','Sub Kegiatan'],['sasaran','Sasaran'],['iku','IKU'],['iki','IKI'],['regulasi','Regulasi']]},
+ {g:'Master Data',items:[['pegawai','Pegawai'],['anggota','Anggota DPRD'],['komisi','Komisi'],['fraksi','Fraksi'],['alat','Alat Kelengkapan DPRD'],['keanggotaan-akd','Keanggotaan AKD'],['tenaga','Tenaga Ahli'],['mitra','Mitra Kerja'],['program','Program'],['kegiatan','Kegiatan'],['subkegiatan','Sub Kegiatan'],['sasaran','Sasaran'],['iku','IKU'],['iki','IKI'],['regulasi','Regulasi']]},
  {g:'Renstra & Kinerja',items:[['rpjmd','RPJMD'],['renstra','Renstra'],['renja','Renja'],['cascading','Cascading'],['pohon','Pohon Kinerja'],['perjanjian','Perjanjian Kinerja'],['rencanaaksi','Rencana Aksi'],['ikuk','IKU (Kinerja)'],['ikik','IKI (Kinerja)'],['monitoring','Monitoring'],['evaluasi','Evaluasi']]},
  {g:'Umum & Keuangan',items:[['persuratan','Persuratan'],['arsip','Arsip'],['perjalanan','Perjalanan Dinas'],['kepegawaian','Kepegawaian'],['rumahtangga','Rumah Tangga'],['kendaraan','Kendaraan'],['anggaran','Anggaran'],['spj','SPJ']]},
  {g:'Aset & BMD',items:[['aset-rencana','Perencanaan'],['inventaris','Inventaris'],['pemeliharaan','Pemeliharaan'],['mutasi','Mutasi'],['penghapusan','Penghapusan'],['rekonsiliasi','Rekonsiliasi']]},
@@ -242,14 +248,15 @@ const LABEL={};MENU.forEach(g=>g.items.forEach(([id,l])=>LABEL[id]=l));
 const STD=[['kode','Kode'],['nama','Nama / Uraian'],['unit','Unit / Bidang'],['tanggal','Tanggal','date'],['nilai','Nilai (Rp)','num'],['status','Status','sel',['Draft','Berjalan','Selesai','Terlambat']],['dokumen','Tautan Dokumen'],['keterangan','Keterangan','ta']];
 const FIELDS={
  pegawai:[['nip','NIP'],['nama','Nama'],['jabatan','Jabatan'],['unit','Unit Kerja'],['golongan','Golongan'],['status','Status','sel',['Aktif','Cuti','Pensiun']]],
- anggota:[['nama','Nama'],['fraksi','Fraksi','rel','fraksi'],['komisi','Komisi','rel','komisi'],['dapil','Daerah Pemilihan'],['jabatan','Jabatan'],['status','Status','sel',['Aktif','Antar Waktu','Nonaktif']]],
- fraksi:[['kode','Kode'],['nama','Nama Fraksi'],['ketua','Ketua','rel','anggota',{via:'fraksi',opsional:true}],['jumlah','Jumlah Anggota Aktif','hit',['anggota','fraksi',['Nonaktif']]],['status','Status','sel',['Aktif','Nonaktif']]],
- komisi:[['kode','Kode'],['nama','Nama Komisi'],['ketua','Ketua','rel','anggota',{via:'komisi',opsional:true}],['mitra','Mitra Kerja Utama'],['jumlah','Jumlah Anggota Aktif','hit',['anggota','komisi',['Nonaktif']]],['status','Status','sel',['Aktif','Nonaktif']]],
+ anggota:[['nama','Nama'],['fraksi','Fraksi','rel','fraksi'],['peranFraksi','Peran di Fraksi','sel',['Ketua','Wakil Ketua','Sekretaris','Anggota'],{opsional:true}],['komisi','Komisi','rel','komisi'],['peranKomisi','Peran di Komisi','sel',['Ketua','Wakil Ketua','Sekretaris','Anggota'],{opsional:true}],['dapil','Daerah Pemilihan'],['status','Status','sel',['Aktif','Antar Waktu','Nonaktif']],['jabatan','Jabatan']],
+ fraksi:[['kode','Kode'],['nama','Nama Fraksi'],['ketua','Ketua Fraksi','turunan',['anggota','fraksi','peranFraksi','Ketua']],['jumlah','Jumlah Anggota Aktif','hit',['anggota','fraksi',['Nonaktif']]],['status','Status','sel',['Aktif','Nonaktif']]],
+ komisi:[['kode','Kode'],['nama','Nama Komisi'],['ketua','Ketua Komisi','turunan',['anggota','komisi','peranKomisi','Ketua']],['mitra','Mitra Kerja Utama'],['jumlah','Jumlah Anggota Aktif','hit',['anggota','komisi',['Nonaktif']]],['status','Status','sel',['Aktif','Nonaktif']]],
  program:[['kode','Kode Program'],['nama','Nama Program'],['unit','Unit Penanggung Jawab'],['pagu','Pagu (Rp)','num'],['realisasi','Realisasi (Rp)','num'],['status','Status','sel',['Berjalan','Selesai','Terlambat']]],
  iku:[['kode','Kode IKU'],['nama','Indikator'],['unit','Unit'],['target','Target','num'],['capaian','Realisasi','num'],['satuan','Satuan'],['status','Status','sel',['Tercapai','Proses','Tertunda']]]
 };
 Object.assign(FIELDS,{
- alat:[['kode','Kode'],['nama','Alat Kelengkapan'],['jenis','Jenis','sel',['Badan','Panitia','Kelompok Kerja']],['ketua','Ketua'],['jumlah','Anggota','num'],['status','Status','sel',['Aktif','Nonaktif']]],
+ alat:[['kode','Kode'],['nama','Nama Alat Kelengkapan'],['jenis','Jenis AKD','sel',['Pimpinan DPRD','Badan Musyawarah','Komisi','Badan Pembentukan Perda','Badan Anggaran','Badan Kehormatan','Panitia Khusus','Alat Kelengkapan Lainnya']],['ketua','Ketua','turunan',['keanggotaan-akd','alat','peran','Ketua']],['jumlah','Jumlah Anggota Aktif','hit',['keanggotaan-akd','alat',['Nonaktif']]],['status','Status','sel',['Aktif','Nonaktif']],['keterangan','Keterangan','ta']],
+ 'keanggotaan-akd':[['kode','Kode Penempatan'],['alat','Alat Kelengkapan','rel','alat'],['anggota','Nama Anggota DPRD','rel','anggota'],['peran','Peran','sel',['Ketua','Wakil Ketua','Sekretaris','Anggota']],['status','Status','sel',['Aktif','Nonaktif']],['keterangan','Keterangan','ta']],
  tenaga:[['nama','Nama'],['keahlian','Keahlian'],['komisi','Komisi Dampingan','rel','komisi'],['kontrak','Nomor Kontrak'],['status','Status','sel',['Aktif','Berakhir']]],
  mitra:[['kode','Kode'],['nama','Mitra Kerja'],['jenis','Jenis','sel',['OPD','BUMD','Vertikal','Lainnya']],['komisi','Komisi','rel','komisi'],['kontak','Kontak'],['status','Status','sel',['Aktif','Nonaktif']]],
  kegiatan:[['kode','Kode'],['nama','Nama Kegiatan'],['program','Program Induk','rel','program'],['pagu','Pagu (Rp)','num'],['realisasi','Realisasi (Rp)','num'],['status','Status','sel',['Berjalan','Selesai','Terlambat']]],
@@ -271,9 +278,9 @@ Object.assign(FIELDS,{
 });
 const SEED={
  pegawai:[{nip:'198604122010011003',nama:'Hendra Wijaya, S.H.',jabatan:'Kepala Bagian Umum',unit:'Bagian Umum dan Keuangan',golongan:'III/c',status:'Aktif'},{nip:'197811052003122005',nama:'Yuliana Sari, S.E.',jabatan:'Kasubag Keuangan',unit:'Bagian Umum dan Keuangan',golongan:'III/b',status:'Aktif'},{nip:'199005202015031002',nama:'Rahmat Hidayat, S.Kom.',jabatan:'Analis Sistem Informasi',unit:'Bagian Persidangan dan Perundang-undangan',golongan:'III/a',status:'Aktif'},{nip:'198209142008022001',nama:'Maria Ulfah, S.Sos.',jabatan:'Analis Humas dan Protokol',unit:'Bagian Persidangan dan Perundang-undangan',golongan:'III/b',status:'Cuti'},{nip:'197505301999031004',nama:'Antonius Ayu, S.T.',jabatan:'Pengelola BMD',unit:'Bagian Umum dan Keuangan',golongan:'III/d',status:'Aktif'}],
- anggota:[{nama:'H. Ahmad Yani, S.Pd.',fraksi:'Fraksi Persatuan Pembangunan',komisi:'Komisi I',dapil:'Dapil I',jabatan:'Ketua DPRD',status:'Aktif'},{nama:'Siti Rahmawati, S.E.',fraksi:'Fraksi Golkar',komisi:'Komisi II',dapil:'Dapil II',jabatan:'Wakil Ketua I',status:'Aktif'},{nama:'Dedi Kurniawan',fraksi:'Fraksi Gerindra',komisi:'Komisi III',dapil:'Dapil III',jabatan:'Anggota',status:'Aktif'},{nama:'Ferry Ardiansyah',fraksi:'Fraksi NasDem',komisi:'Komisi IV',dapil:'Dapil I',jabatan:'Anggota',status:'Aktif'},{nama:'Lina Marlina',fraksi:'Fraksi PDI Perjuangan',komisi:'Komisi I',dapil:'Dapil II',jabatan:'Anggota',status:'Antar Waktu'}],
- fraksi:[{kode:'F-01',nama:'Fraksi Golkar',ketua:'Siti Rahmawati, S.E.',status:'Aktif'},{kode:'F-02',nama:'Fraksi Gerindra',ketua:'Dedi Kurniawan',status:'Aktif'},{kode:'F-03',nama:'Fraksi PDI Perjuangan',ketua:'Lina Marlina',status:'Aktif'},{kode:'F-04',nama:'Fraksi Persatuan Pembangunan',ketua:'H. Ahmad Yani, S.Pd.',status:'Aktif'},{kode:'F-05',nama:'Fraksi NasDem',ketua:'Ferry Ardiansyah',status:'Aktif'}],
- komisi:[{kode:'K-I',nama:'Komisi I',ketua:'Lina Marlina',mitra:'Bagian Hukum, Bagian Pemerintahan',status:'Aktif'},{kode:'K-II',nama:'Komisi II',ketua:'Siti Rahmawati, S.E.',mitra:'Bappeda, Dinas Pendapatan',status:'Aktif'},{kode:'K-III',nama:'Komisi III',ketua:'Dedi Kurniawan',mitra:'Dinas PUPR, Dinas Perhubungan',status:'Aktif'},{kode:'K-IV',nama:'Komisi IV',ketua:'Ferry Ardiansyah',mitra:'Dinas Kesehatan, Dinas Pendidikan',status:'Aktif'}],
+ anggota:[{nama:'YANTO, S.P.',fraksi:'F-04',peranFraksi:'',komisi:'',peranKomisi:'',dapil:'Dapil I',status:'Aktif',jabatan:'Ketua DPRD'},{nama:'ABDUL HAMID, S. Pi., M. Si',fraksi:'F-07',peranFraksi:'',komisi:'',peranKomisi:'',dapil:'',status:'Aktif',jabatan:'Wakil Ketua I'},{nama:'TOPAN ALI AKBAR',fraksi:'',peranFraksi:'',komisi:'',peranKomisi:'',dapil:'',status:'Aktif',jabatan:'Wakil Ketua II'},{nama:'H. MUHSIN, s. Ag',fraksi:'',peranFraksi:'',komisi:'K-A',peranKomisi:'Ketua',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'M. AKIM MUSLIM',fraksi:'',peranFraksi:'',komisi:'K-A',peranKomisi:'Sekretaris',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'RINTO',fraksi:'',peranFraksi:'',komisi:'K-A',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'MONIKA MONTES',fraksi:'',peranFraksi:'',komisi:'K-A',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ANDI ASWAD, S.H.',fraksi:'',peranFraksi:'',komisi:'K-A',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'SURYA AKBAR,A.Ma.Pd',fraksi:'',peranFraksi:'',komisi:'K-A',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'KUSWANDI, S.M.',fraksi:'F-01',peranFraksi:'Ketua',komisi:'K-A',peranKomisi:'Anggota',dapil:'Dapil I',status:'Aktif',jabatan:'Anggota'},{nama:'ALPIANSYAH, S.E., M.Si.',fraksi:'F-02',peranFraksi:'Ketua',komisi:'K-A',peranKomisi:'Wakil Ketua',dapil:'Dapil I',status:'Aktif',jabatan:'Anggota'},{nama:'H. HAIRUDDIN, S.Pd',fraksi:'',peranFraksi:'',komisi:'K-A',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ANTONIUS THAMBUN, S.H.',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ALEXANDER TRIFANTO, S.H',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ANDRIANUS',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Sekretaris',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ANGGARAWAN PRAMUDYA, S.Sos',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Wakil Ketua',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'SYEH FADEL ABDRIANSYAH',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ANDREAS TINGKAH, S.M.',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'MAURA MARSALENA HIROH',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'STEFANUS, S. Sos.',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Ketua',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'GUSTI ABDUL, JAFAR, S. Mn',fraksi:'',peranFraksi:'',komisi:'K-B',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ANTONIUS JUGAH',fraksi:'',peranFraksi:'',komisi:'K-C',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'HAMBALI',fraksi:'F-06',peranFraksi:'Wakil Ketua',komisi:'K-C',peranKomisi:'',dapil:'Dapil II',status:'Aktif',jabatan:'Anggota'},{nama:'MASUHARDI, S. Sos., M.Si',fraksi:'',peranFraksi:'',komisi:'K-C',peranKomisi:'Wakil Ketua',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'AWENG S. Kom., M.M.',fraksi:'F-05',peranFraksi:'Ketua',komisi:'K-C',peranKomisi:'',dapil:'Dapil IV',status:'Aktif',jabatan:'Anggota'},{nama:'SAFARNI',fraksi:'',peranFraksi:'',komisi:'K-C',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'BARAUN, S.M.',fraksi:'',peranFraksi:'',komisi:'K-C',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'DERY KURNIAWAN, A.Md. T',fraksi:'',peranFraksi:'',komisi:'K-C',peranKomisi:'Sekretaris',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'ABANG SURAHMAN, S.H',fraksi:'',peranFraksi:'',komisi:'K-C',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'},{nama:'LANDA, S. IP., M.A.P',fraksi:'',peranFraksi:'',komisi:'K-C',peranKomisi:'Anggota',dapil:'',status:'Aktif',jabatan:'Anggota'}],
+ fraksi:[{kode:'F-01',nama:'Fraksi Partai Golkar',status:'Aktif'},{kode:'F-02',nama:'Fraksi Partai PPP',status:'Aktif'},{kode:'F-03',nama:'Fraksi Partai PAN',status:'Aktif'},{kode:'F-04',nama:'Fraksi Partai PDIP',status:'Aktif'},{kode:'F-05',nama:'Fraksi Partai Demokrat',status:'Aktif'},{kode:'F-06',nama:'Fraksi Partai Gerindra',status:'Aktif'},{kode:'F-07',nama:'Fraksi Partai Nasdem',status:'Aktif'},{kode:'F-08',nama:'Fraksi Rakyat Bersatu',status:'Aktif'}],
+ komisi:[{kode:'K-A',nama:'Komisi A',mitra:'Bidang Hukum dan Pemerintahan',status:'Aktif'},{kode:'K-B',nama:'Komisi B',mitra:'Bidang Ekonomi dan Keuangan',status:'Aktif'},{kode:'K-C',nama:'Komisi C',mitra:'Bidang Pembangunan dan Kesejahteraan Rakyat',status:'Aktif'}],
  program:[{kode:'1.01.01',nama:'Program Pelayanan Administrasi Perkantoran',unit:'Sekretariat DPRD',pagu:2450000000,realisasi:2118000000,status:'Berjalan'},{kode:'1.01.02',nama:'Program Peningkatan Sarana dan Prasarana Aparatur',unit:'Bagian Umum dan Keuangan',pagu:1180000000,realisasi:1075000000,status:'Berjalan'},{kode:'1.02.01',nama:'Program Penyediaan Layanan Dewan',unit:'Bagian Persidangan dan Perundang-undangan',pagu:3620000000,realisasi:2940000000,status:'Berjalan'},{kode:'1.03.01',nama:'Program Peningkatan Kapasitas Aparatur',unit:'Subbagian Tata Usaha dan Kepegawaian',pagu:620000000,realisasi:620000000,status:'Selesai'}],
  iku:[{kode:'IKU-01',nama:'Persentase rapat paripurna terlaksana tepat waktu',unit:'Bagian Persidangan dan Perundang-undangan',target:100,capaian:96,satuan:'%',status:'Proses'},{kode:'IKU-02',nama:'Persentase Perda yang dibahas sesuai Propemperda',unit:'Bagian Persidangan dan Perundang-undangan',target:90,capaian:92,satuan:'%',status:'Tercapai'},{kode:'IKU-03',nama:'Persentase aduan masyarakat ditindaklanjuti',unit:'Bagian Persidangan dan Perundang-undangan',target:95,capaian:88,satuan:'%',status:'Proses'},{kode:'IKU-04',nama:'Nilai SAKIP Sekretariat',unit:'Sekretariat DPRD',target:80,capaian:78.5,satuan:'Nilai',status:'Proses'},{kode:'IKU-05',nama:'Persentase BMD tercatat dan terverifikasi',unit:'Bagian Umum dan Keuangan',target:100,capaian:100,satuan:'%',status:'Tercapai'}]
 };
@@ -406,33 +413,33 @@ Object.assign(SEED,{
   {kode:'AGD-2026-046',nama:'Rapat kerja komisi dengan mitra OPD',jenis:'Komisi',tanggal:'2026-10-28',status:'Draft'}
  ],
  jadwal:[
-  {kode:'JDW-2026-101',nama:'Rapat kerja Komisi I',agenda:'AGD-2026-046',tanggal:'2026-10-28',tempat:'Ruang Rapat Utama',status:'Berjalan'}
+  {kode:'JDW-2026-101',nama:'Rapat kerja Komisi A',agenda:'AGD-2026-046',tanggal:'2026-10-28',tempat:'Ruang Rapat Utama',status:'Berjalan'}
  ],
  rapat:[
-  {kode:'RPT-2026-210',nama:'Rapat kerja dengan Bagian Hukum',jenis:'Rapat Komisi',komisi:'K-I',pimpinan:'Dedi Kurniawan',tanggal:'2026-10-20',status:'Selesai'},
-  {kode:'RPT-2026-211',nama:'Rapat konsultasi pembahasan Ranperda pajak',jenis:'Rapat Konsultasi',komisi:'K-II',pimpinan:'Siti Rahmawati',tanggal:'2026-10-23',status:'Berjalan'}
+  {kode:'RPT-2026-210',nama:'Rapat kerja dengan Bagian Hukum',jenis:'Rapat Komisi',komisi:'K-A',pimpinan:'KUSWANDI, S.M.',tanggal:'2026-10-20',status:'Selesai'},
+  {kode:'RPT-2026-211',nama:'Rapat konsultasi pembahasan Ranperda pajak',jenis:'Rapat Konsultasi',komisi:'K-B',pimpinan:'ALPIANSYAH',tanggal:'2026-10-23',status:'Berjalan'}
  ],
  'rapat-komisi':[
-  {kode:'RK-01',nama:'Pembahasan Ranperda pajak daerah',komisi:'K-II',pimpinan:'Siti Rahmawati',tanggal:'2026-10-23',status:'Berjalan'}
+  {kode:'RK-01',nama:'Pembahasan Ranperda pajak daerah',komisi:'K-B',pimpinan:'ALPIANSYAH',tanggal:'2026-10-23',status:'Berjalan'}
  ],
  banggar:[
-  {kode:'BG-01',nama:'Pembahasan KUA-PPAS 2027',pimpinan:'H. Ahmad Yani',tanggal:'2026-10-14',status:'Selesai'}
+  {kode:'BG-01',nama:'Pembahasan KUA-PPAS 2027',pimpinan:'YANTO, S.P.',tanggal:'2026-10-14',status:'Selesai'}
  ],
  bapemperda:[
-  {kode:'BP-01',nama:'Penyusunan Propemperda 2027',pimpinan:'Ferry Ardiansyah',tanggal:'2026-11-05',status:'Draft'}
+  {kode:'BP-01',nama:'Penyusunan Propemperda 2027',pimpinan:'YANTO, S.P.',tanggal:'2026-11-05',status:'Draft'}
  ],
  bk:[
-  {kode:'BK-2026-01',nama:'Verifikasi pengaduan kode etik',anggota:'Lina Marlina',tanggal:'2026-10-09',status:'Berjalan'}
+  {kode:'BK-2026-01',nama:'Verifikasi pengaduan kode etik',anggota:'KUSWANDI, S.M.',tanggal:'2026-10-09',status:'Berjalan'}
  ],
  paripurna:[
   {kode:'PRP-2026-01',nama:'Rapat paripurna pembukaan masa sidang',agenda:'AGD-2026-001',jenis:'Pembukaan Masa Sidang',tanggal:'2026-02-02',status:'Selesai'},
   {kode:'PRP-2026-12',nama:'Rapat paripurna pengambilan keputusan Ranperda',agenda:'AGD-2026-045',jenis:'Pengambilan Keputusan',tanggal:'2026-10-30',status:'Draft'}
  ],
  risalah:[
-  {kode:'RSL-2026-210',nama:'Risalah rapat kerja Komisi I dengan Bagian Hukum',rapat:'RPT-2026-210',halaman:14,tanggal:'2026-10-21',status:'Selesai'}
+  {kode:'RSL-2026-210',nama:'Risalah rapat kerja Komisi A dengan Bagian Hukum',rapat:'RPT-2026-210',halaman:14,tanggal:'2026-10-21',status:'Selesai'}
  ],
  notulen:[
-  {kode:'NTL-2026-210',nama:'Notulen rapat kerja Komisi I',rapat:'RPT-2026-210',peserta:12,tanggal:'2026-10-21',status:'Selesai'}
+  {kode:'NTL-2026-210',nama:'Notulen rapat kerja Komisi A',rapat:'RPT-2026-210',peserta:12,tanggal:'2026-10-21',status:'Selesai'}
  ],
  keputusan:[
   {kode:'KPT-2026-015',nama:'Keputusan pembentukan panitia khusus Ranperda',jenis:'Keputusan DPRD',paripurna:'PRP-2026-01',tanggal:'2026-02-02',status:'Selesai'}
@@ -518,7 +525,7 @@ Object.assign(FIELDS,{
 });
 Object.assign(SEED,{
  monopd:[
-  {kode:'MON-OPD-2026-01',nama:'Monitoring pelaksanaan program OPD mitra Komisi I',opd:'Bagian Hukum',tanggal:'2026-08-12',jumlahTemuan:2,status:'Selesai'},
+  {kode:'MON-OPD-2026-01',nama:'Monitoring pelaksanaan program OPD mitra Komisi A',opd:'Bagian Hukum',tanggal:'2026-08-12',jumlahTemuan:2,status:'Selesai'},
   {kode:'MON-OPD-2026-02',nama:'Monitoring pelaksanaan program Dinas PUPR',opd:'Dinas PUPR',tanggal:'2026-10-05',jumlahTemuan:4,status:'Berjalan'}
  ],
  monprogram:[
@@ -555,21 +562,21 @@ Object.assign(FIELDS,{
 });
 Object.assign(SEED,{
  reses:[
-  {kode:'RSS-2026-I-01',nama:'Reses masa sidang I di Kecamatan Putussibau',anggota:'Dedi Kurniawan',dapil:'Dapil III',tanggal:'2026-03-10',peserta:86,status:'Selesai'},
-  {kode:'RSS-2026-II-02',nama:'Reses masa sidang II di Kecamatan Embaloh Hulu',anggota:'Siti Rahmawati, S.E.',dapil:'Dapil II',tanggal:'2026-10-02',peserta:64,status:'Berjalan'}
+  {kode:'RSS-2026-I-01',nama:'Reses masa sidang I di Kecamatan Putussibau',anggota:'KUSWANDI, S.M.',dapil:'Dapil III',tanggal:'2026-03-10',peserta:86,status:'Selesai'},
+  {kode:'RSS-2026-II-02',nama:'Reses masa sidang II di Kecamatan Embaloh Hulu',anggota:'ALPIANSYAH, S.E., M.Si.',dapil:'Dapil II',tanggal:'2026-10-02',peserta:64,status:'Berjalan'}
  ],
  pokir:[
-  {kode:'PKR-2026-001',nama:'Perbaikan jalan usaha tani Desa Lanjak',anggota:'Ferry Ardiansyah',dapil:'Dapil I',usulan:750000000,status:'Masuk APBD'},
-  {kode:'PKR-2026-002',nama:'Pengadaan alat belajar sekolah dasar',anggota:'Lina Marlina',dapil:'Dapil II',usulan:420000000,status:'Disinkronkan'},
-  {kode:'PKR-2026-003',nama:'Pembangunan jembatan gantung',anggota:'Dedi Kurniawan',dapil:'Dapil III',usulan:1200000000,status:'Diusulkan'}
+  {kode:'PKR-2026-001',nama:'Perbaikan jalan usaha tani Desa Lanjak',anggota:'YANTO, S.P.',dapil:'Dapil I',usulan:750000000,status:'Masuk APBD'},
+  {kode:'PKR-2026-002',nama:'Pengadaan alat belajar sekolah dasar',anggota:'KUSWANDI, S.M.',dapil:'Dapil II',usulan:420000000,status:'Disinkronkan'},
+  {kode:'PKR-2026-003',nama:'Pembangunan jembatan gantung',anggota:'KUSWANDI, S.M.',dapil:'Dapil III',usulan:1200000000,status:'Diusulkan'}
  ],
  hearing:[
-  {kode:'HR-2026-04',nama:'Hearing rancangan kebijakan pendidikan',komisi:'K-IV',narasumber:'Dinas Pendidikan',tanggal:'2026-10-14',status:'Selesai'},
-  {kode:'HR-2026-05',nama:'Hearing penanganan banjir musiman',komisi:'K-III',narasumber:'Dinas PUPR',tanggal:'2026-11-04',status:'Draft'}
+  {kode:'HR-2026-04',nama:'Hearing rancangan kebijakan pendidikan',komisi:'',narasumber:'Dinas Pendidikan',tanggal:'2026-10-14',status:'Selesai'},
+  {kode:'HR-2026-05',nama:'Hearing penanganan banjir musiman',komisi:'K-C',narasumber:'Dinas PUPR',tanggal:'2026-11-04',status:'Draft'}
  ],
  audiensi:[
-  {kode:'AUD-2026-031',nama:'Kelompok tani Desa Lanjak',penerima:'H. Ahmad Yani, S.Pd.',tanggal:'2026-09-18',tuntutan:'Permohonan dukungan perbaikan irigasi',status:'Selesai'},
-  {kode:'AUD-2026-032',nama:'Paguyuban pedagang pasar Putussibau',penerima:'Siti Rahmawati, S.E.',tanggal:'2026-10-21',tuntutan:'Permohonan penataan lapak',status:'Berjalan'}
+  {kode:'AUD-2026-031',nama:'Kelompok tani Desa Lanjak',penerima:'YANTO, S.P.',tanggal:'2026-09-18',tuntutan:'Permohonan dukungan perbaikan irigasi',status:'Selesai'},
+  {kode:'AUD-2026-032',nama:'Paguyuban pedagang pasar Putussibau',penerima:'ALPIANSYAH, S.E., M.Si.',tanggal:'2026-10-21',tuntutan:'Permohonan penataan lapak',status:'Berjalan'}
  ],
  aspirasidigital:[
   {kode:'ASP-2026-1101',nama:'Usulan lampu jalan di Desa Nanga Badau',kanal:'Portal Web',dapil:'Dapil I',tanggal:'2026-10-16',status:'Berjalan'},
@@ -590,7 +597,7 @@ Object.assign(FIELDS,{
 Object.assign(SEED,{
  berita:[
   {kode:'BRT-2026-101',nama:'Rapat paripurna pembukaan masa sidang I 2026 berlangsung',kategori:'Persidangan',penulis:'Tim Humas',tanggal:'2026-02-02',status:'Selesai'},
-  {kode:'BRT-2026-188',nama:'Komisi I dorong pembahasan Ranperda Pajak Daerah',kategori:'Legislasi',penulis:'Tim Humas',tanggal:'2026-10-21',status:'Berjalan'},
+  {kode:'BRT-2026-188',nama:'Komisi A dorong pembahasan Ranperda Pajak Daerah',kategori:'Legislasi',penulis:'Tim Humas',tanggal:'2026-10-21',status:'Berjalan'},
   {kode:'BRT-2026-190',nama:'Reses II sampaikan aspirasi warga Embaloh Hulu',kategori:'Aspirasi',penulis:'Tim Humas',tanggal:'2026-10-22',status:'Draft'}
  ],
  publikasi:[
@@ -611,6 +618,8 @@ Object.assign(SEED,{
   {kode:'PRT-2026-08',nama:'Upacara peringatan hari jadi kabupaten',tamu:'Bupati dan Forkopimda',jenis:'Upacara',tanggal:'2026-10-14',status:'Selesai'}
  ]
 });
+SEED.alat=[{kode:'BM',nama:'Badan Musyawarah',jenis:'Badan Musyawarah',status:'Aktif',keterangan:'Data contoh; lengkapi susunan anggota sesuai data resmi.'},{kode:'BA',nama:'Badan Anggaran',jenis:'Badan Anggaran',status:'Aktif',keterangan:'Data contoh; lengkapi susunan anggota sesuai data resmi.'},{kode:'BP',nama:'Badan Pembentukan Perda',jenis:'Badan Pembentukan Perda',status:'Aktif',keterangan:'Data contoh; lengkapi susunan anggota sesuai data resmi.'},{kode:'BK',nama:'Badan Kehormatan',jenis:'Badan Kehormatan',status:'Aktif',keterangan:'Data contoh; lengkapi susunan anggota sesuai data resmi.'}];
+SEED['keanggotaan-akd']=[{kode:'AKD-BM-001',alat:'BM',anggota:'YANTO, S.P.',peran:'Ketua',status:'Aktif',keterangan:'Data contoh dari isian lama; verifikasi terhadap susunan resmi.'},{kode:'AKD-BP-001',alat:'BP',anggota:'AWENG S. Kom., M.M.',peran:'Ketua',status:'Aktif',keterangan:'Data contoh dari isian lama; verifikasi terhadap susunan resmi.'}];
 function seedFor(t){
   if(SEED[t])return SEED[t];
   const f=(FIELDS[t]||STD);
@@ -621,6 +630,7 @@ function seedFor(t){
 function ensureData(){
   MENU.forEach(g=>g.items.forEach(([id])=>{ if(!TABLES[id] && id!=='dash' && id!=='evidence' && id!=='panduan' && id!=='periksa' && id!=='uji' && id!=='pengguna' && !id.startsWith('an-')) TABLES[id]=seedFor(id).map(r=>({id:uid(),dibuat:'2026-01-01',diubah:'2026-01-01',...r})) }));
   resolveRefs();
+  migrateLegacyKetua();
   AUDIT.push({waktu:new Date().toLocaleString('id-ID'),aksi:'MUAT',modul:'sistem',ref:'Data contoh dimuat',user:'Sistem'});
 }
 
@@ -706,12 +716,16 @@ function renderModule(id){
   const title=LABEL[id]||id;
   const hasStatus=cols.some(c=>c[0]==='status');
   const moduleSubtitle = id==='anggota'
-    ? 'Sumber utama data anggota. Tetapkan Fraksi dan Komisi pada setiap record anggota.'
+    ? 'Sumber tunggal keanggotaan. Tetapkan Fraksi, Komisi, dan peran (Ketua/Anggota) pada setiap record anggota.'
     : id==='komisi'
       ? 'Daftar anggota dan ketua komisi bersumber dari penempatan pada modul Anggota DPRD.'
       : id==='fraksi'
         ? 'Daftar anggota dan ketua fraksi bersumber dari penempatan pada modul Anggota DPRD.'
-        : 'Record Engine · CRUD, pencarian, filter, ekspor, audit trail';
+        : id==='alat'
+          ? 'Master jenis AKD. Ketua dan jumlah anggota dihitung dari Keanggotaan AKD; isi kolom Keterangan bila catatan tambahan diperlukan. Data Komisi rinci tetap dikelola pada modul Komisi agar tidak ganda.'
+          : id==='keanggotaan-akd'
+            ? 'Relasi anggota untuk AKD. Nama dipilih dari master Anggota DPRD; peran dan jumlah aktif direkap pada modul Alat Kelengkapan DPRD.'
+            : 'Record Engine · CRUD, pencarian, filter, ekspor, audit trail';
   $('#view').innerHTML=`
   <div class="row"><div><h1>${esc(title)}</h1><div class="sub">${esc(moduleSubtitle)}</div></div>
   <div class="actions noprint">${canWrite(id)?'<button class="btn-p" id="btnAdd">+ Tambah</button>':''}</div></div>
@@ -727,7 +741,7 @@ function renderModule(id){
     <div class="tbl" style="margin-top:12px" id="tbl"></div>
   </div>
   ${id==='komisi'||id==='fraksi'?'<div id="memberSourceBox"></div>':''}
-  <div class="card"><b>Relasi & Evidence</b><div class="sub">${id==='anggota'?'Penempatan Fraksi dan Komisi pada record anggota menjadi sumber daftar anggota dan jumlah anggota di modul terkait.':id==='komisi'||id==='fraksi'?'Daftar di bawah ini dihitung langsung dari record Anggota DPRD; ubah penempatan anggota melalui modul Anggota DPRD.':'Setiap record dapat dihubungkan ke Evidence Center dan Renstra melalui kolom Tautan Dokumen.'}</div></div>`;
+  <div class="card"><b>Relasi & Evidence</b><div class="sub">${id==='anggota'?'Penempatan Fraksi dan Komisi pada record anggota menjadi sumber daftar anggota dan jumlah anggota di modul terkait.':id==='komisi'||id==='fraksi'?'Daftar di bawah ini dihitung langsung dari record Anggota DPRD; ubah penempatan anggota melalui modul Anggota DPRD.':id==='alat'?'Ketua dan jumlah anggota berasal dari relasi pada Keanggotaan AKD, sedangkan Keterangan untuk catatan bebas.':id==='keanggotaan-akd'?'Relasi ini menggunakan ID Anggota DPRD dan Alat Kelengkapan; data nama tidak disalin. Keterangan bersifat opsional.':'Setiap record dapat dihubungkan ke Evidence Center dan Renstra melalui kolom Tautan Dokumen.'}</div></div>`;
   $('#fq').oninput=e=>{S.q=e.target.value;drawTable(id)};
   if(hasStatus)$('#fs').onchange=e=>{S.st=e.target.value;drawTable(id)};
   const ba=$('#btnAdd'); if(ba)ba.onclick=()=>openForm(id,null);
@@ -775,22 +789,42 @@ function renderTree(id){
 function setTree(o){$$('#tree details').forEach(d=>d.open=o)}
 function filtered(id){
   const cols=FIELDS[id]||STD, q=S.q.toLowerCase();
-  return dbAll(id).filter(r=>(!S.st||r.status===S.st)&&(!q||cols.some(([k,,ty,opt])=>{
+  const rows = dbAll(id).filter(r=>(!S.st||r.status===S.st)&&(!q||cols.some(([k,,ty,opt])=>{
     let value=r[k]??'';
     if(ty==='rel'&&value){const target=dbAll(opt).find(x=>String(x.id)===String(value));if(target)value=[target.nama,target.kode].filter(Boolean).join(' ')}
     if(ty==='hit')value=exportFieldValue(id,r,cols.find(c=>c[0]===k)||[k,'',ty,opt]);
+    if(ty==='turunan')value=turunanText(opt,r.id);
     return String(value).toLowerCase().includes(q);
   })));
+  // Urutkan master Komisi dan Fraksi berdasarkan kode secara natural (K-1, K-2, K-10; F-01, F-02, ...).
+  // Jangan bergantung pada urutan baris yang dikembalikan database karena SELECT tanpa ORDER BY tidak menjamin urutan.
+  if(id==='komisi'||id==='fraksi'){
+    rows.sort((a,b)=>String(a.kode||'').localeCompare(String(b.kode||''),'id',{numeric:true,sensitivity:'base'}) || String(a.nama||'').localeCompare(String(b.nama||''),'id',{numeric:true,sensitivity:'base'}));
+  }
+  return rows;
 }
+const TABLE_COLS={anggota:8,alat:7,'keanggotaan-akd':6}; // Kolom jabatan Anggota DPRD dan seluruh kolom AKD ditampilkan.
 function drawTable(id){
-  const cols=(FIELDS[id]||STD).slice(0,5);
+  const allCols=FIELDS[id]||STD;
+  // Khusus tabel Anggota DPRD, tampilkan Jabatan tepat setelah Nama.
+  // Urutan field formulir dan sumber data tetap tidak diubah.
+  const tableCols=id==='anggota'
+    ? [allCols.find(c=>c[0]==='nama'),allCols.find(c=>c[0]==='jabatan'),...allCols.filter(c=>!['nama','jabatan'].includes(c[0]))].filter(Boolean)
+    : allCols;
+  const cols=tableCols.slice(0,TABLE_COLS[id]||5);
   const rows=filtered(id);
   $('#tbl').innerHTML=rows.length?`<table><thead><tr><th>No</th>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}<th class="noprint">Aksi</th></tr></thead><tbody>
   ${rows.map((r,i)=>`<tr><td>${i+1}</td>${cols.map(c=>`<td>${cellVal(r,c)}</td>`).join('')}
-  <td class="noprint actions">${canWrite(id)?`<button onclick="openForm('${id}','${r.id}')">Ubah</button>`:''} ${canDelete()?`<button class="btn-d" onclick="delRow('${id}','${r.id}')">Hapus</button>`:''}</td></tr>`).join('')}
+  <td class="noprint actions">${canWrite(id)?`<button onclick="openForm('${id}','${r.id}')">Ubah</button>`:''} ${canDeleteRecord(id)?`<button type="button" class="btn-d" title="Hapus ${id==='komisi'?'Komisi':id==='fraksi'?'Fraksi':'record'} ini" onclick="delRow('${id}','${r.id}')">${id==='komisi'?'Hapus Komisi':id==='fraksi'?'Hapus Fraksi':'Hapus'}</button>`:''}</td></tr>`).join('')}
   </tbody></table>`:`<div class="empty">Tidak ada data yang cocok.</div>`;
   if(id==='komisi'||id==='fraksi')renderMemberSource(id);
   if(!window._sr)window._sr=0;
+}
+function canManageMembership(groupType){
+  // Penempatan anggota adalah data sumber di modul Anggota DPRD, tetapi tombol
+  // lepas penempatan juga menjadi kewenangan pengelola modul kelompok terkait.
+  // RLS Supabase tetap menjadi lapisan otorisasi akhir untuk operasi cloud.
+  return ['komisi','fraksi'].includes(groupType) && (canWrite('anggota') || canWrite(groupType));
 }
 function renderMemberSource(id){
   const box=$('#memberSourceBox');
@@ -803,19 +837,141 @@ function renderMemberSource(id){
   ${groups.map(g=>{
     const members=dbAll('anggota').filter(m=>String(m[memberField]||'')===String(g.id));
     const active=members.filter(m=>m.status!=='Nonaktif').length;
-    const chair=dbAll('anggota').find(m=>String(m.id)===String(g.ketua))||null;
-    const chairAssigned=!!(chair&&String(chair[memberField]||'')===String(g.id));
-    const chairLabel=chairAssigned?chair.nama:(chair?'Belum valid — '+chair.nama:(g.ketua?'Belum terhubung: '+String(g.ketua):'Belum ditetapkan'));
-    return `<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px"><div class="row"><div><b>${esc(g.nama||g.kode||'Tanpa nama')}</b><div class="sub">${esc(g.kode||'')} · Ketua: ${esc(chairLabel)}</div></div><div style="text-align:right"><b>${fmt(active)}</b><div class="hint">anggota aktif dari ${fmt(members.length)} terdaftar</div><button type="button" data-member-add="${esc(g.id)}" style="margin-top:6px">+ Tambah anggota</button></div></div>
-      ${members.length?`<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Nama anggota</th><th>Jabatan</th><th>Dapil</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${members.map(m=>`<tr><td>${esc(m.nama||'Tanpa nama')}</td><td>${esc(m.jabatan||'—')}</td><td>${esc(m.dapil||'—')}</td><td><span class="pill ${m.status==='Nonaktif'?'s-Tertunda':'s-Aktif'}">${esc(m.status||'—')}</span></td><td><button type="button" data-member-edit="${esc(m.id)}">Ubah di Anggota DPRD</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Belum ada anggota ditempatkan. Klik “Tambah anggota”; formulir Anggota DPRD akan dibuka dengan kelompok ini terpilih.</div>'}
+    const peranField=memberField==='komisi'?'peranKomisi':'peranFraksi';
+    const chairs=members.filter(m=>m[peranField]==='Ketua'&&m.status!=='Nonaktif');
+    const chairLabel=chairs.length?chairs.map(c=>c.nama).join(', ')+(chairs.length>1?' (ganda, perbaiki di Anggota DPRD)':''):'Belum ditetapkan';
+    return `<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px"><div class="row"><div><b>${esc(g.nama||g.kode||'Tanpa nama')}</b><div class="sub">${esc(g.kode||'')} · Ketua: ${esc(chairLabel)}</div></div><div style="text-align:right"><b>${fmt(active)}</b><div class="hint">anggota aktif dari ${fmt(members.length)} terdaftar</div>${canManageMembership(id)?`<button type="button" data-member-add="${esc(g.id)}" style="margin-top:6px">+ Tambah anggota</button>`:''}</div></div>
+      ${members.length?`<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Nama anggota</th><th>Peran</th><th>Jabatan</th><th>Dapil</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${[...members].sort((a,b)=>(b[peranField]==='Ketua')-(a[peranField]==='Ketua')).map(m=>`<tr><td>${esc(m.nama||'Tanpa nama')}</td><td>${esc(m[peranField]||'—')}</td><td>${esc(m.jabatan||'—')}</td><td>${esc(m.dapil||'—')}</td><td><span class="pill ${m.status==='Nonaktif'?'s-Tertunda':'s-Aktif'}">${esc(m.status||'—')}</span></td><td class="noprint actions"><button type="button" data-member-edit="${esc(m.id)}">Ubah di Anggota DPRD</button> ${canManageMembership(id)?`<button type="button" class="btn-d" data-member-remove="${esc(m.id)}" data-member-group="${esc(g.id)}" title="Hapus penempatan anggota dari ${groupLabel.toLowerCase()}">Hapus dari ${groupLabel}</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Belum ada anggota ditempatkan. Klik “Tambah anggota”; formulir Anggota DPRD akan dibuka dengan kelompok ini terpilih.</div>'}
     </div>`;
   }).join('')}
-  ${(()=>{const known=new Set(dbAll(id).map(g=>String(g.id)));const orphan=dbAll('anggota').filter(m=>m[memberField]&&!known.has(String(m[memberField])));return orphan.length?`<div style="margin-top:12px;padding:12px;border:1px solid rgba(247,144,9,.5);border-radius:10px;background:rgba(247,144,9,.06)"><b>Penempatan yang belum terhubung (${orphan.length})</b><div class="sub" style="margin:4px 0 8px">Nilai ini tidak cocok dengan data master ${groupLabel.toLowerCase()} yang tersedia. Edit anggota dan pilih ${groupLabel.toLowerCase()} yang benar, atau buat data master yang belum tersedia.</div>${orphan.map(m=>`<div class="row" style="padding:5px 0;border-top:1px solid var(--line)"><span>${esc(m.nama||'Tanpa nama')} <span class="sub">· ${esc(String(m[memberField]))}</span></span><button type="button" data-member-edit="${esc(m.id)}">Perbaiki di Anggota DPRD</button></div>`).join('')}</div>`:''})()}</div>`;
+  ${(()=>{const known=new Set(dbAll(id).map(g=>String(g.id)));const orphan=dbAll('anggota').filter(m=>m[memberField]&&!known.has(String(m[memberField])));return orphan.length?`<div style="margin-top:12px;padding:12px;border:1px solid rgba(247,144,9,.5);border-radius:10px;background:rgba(247,144,9,.06)"><b>Penempatan yang belum terhubung (${orphan.length})</b><div class="sub" style="margin:4px 0 8px">Nilai ini tidak cocok dengan data master ${groupLabel.toLowerCase()} yang tersedia. Edit anggota dan pilih ${groupLabel.toLowerCase()} yang benar, atau buat data master yang belum tersedia.</div>${orphan.map(m=>`<div class="row" style="padding:5px 0;border-top:1px solid var(--line)"><span>${esc(m.nama||'Tanpa nama')} <span class="sub">· Referensi ${groupLabel.toLowerCase()} tidak dikenal: ${esc(String(m[memberField]))}</span></span><span class="actions noprint"><button type="button" data-member-edit="${esc(m.id)}">Perbaiki di Anggota DPRD</button> ${canManageMembership(id)?`<button type="button" class="btn-d" data-member-orphan-remove="${esc(m.id)}">Hapus penempatan</button>`:''}</span></div>`).join('')}</div>`:''})()}</div>`;
   $$('[data-member-edit]',box).forEach(btn=>btn.onclick=()=>openForm('anggota',btn.dataset.memberEdit));
-  $$('[data-member-add]',box).forEach(btn=>btn.onclick=()=>openForm('anggota',null,{[memberField]:btn.dataset.memberAdd}));
+  $$('[data-member-add]',box).forEach(btn=>btn.onclick=()=>openMembershipPicker(id,btn.dataset.memberAdd));
+  $$('[data-member-remove]',box).forEach(btn=>btn.onclick=()=>removeMemberFromGroup(id,btn.dataset.memberGroup,btn.dataset.memberRemove));
+  $$('[data-member-orphan-remove]',box).forEach(btn=>btn.onclick=()=>removeOrphanMembership(id,btn.dataset.memberOrphanRemove));
 }
+function openMembershipPicker(groupType, groupId){
+  if(!['komisi','fraksi'].includes(groupType)){toast('Modul kelompok tidak valid');return}
+  if(!canManageMembership(groupType)){toast('Anda tidak memiliki hak untuk mengubah penempatan anggota');return}
+  const group=dbAll(groupType).find(g=>String(g.id)===String(groupId));
+  if(!group){toast('Data kelompok tidak ditemukan');return}
+  const isKomisi=groupType==='komisi';
+  const field=isKomisi?'komisi':'fraksi';
+  const roleField=isKomisi?'peranKomisi':'peranFraksi';
+  const label=isKomisi?'Komisi':'Fraksi';
+  const groupName=group.nama||group.kode||groupId;
+  // Pilihan nama selalu berasal dari master Anggota DPRD. Record yang sudah terdaftar
+  // pada kelompok yang sedang dibuka tidak ditawarkan lagi agar tidak terjadi duplikasi.
+  const candidates=dbAll('anggota').filter(m=>String(m.nama||'').trim()&&String(m[field]||'')!==String(groupId));
+  const options=candidates.map(m=>{
+    const currentId=String(m[field]||'');
+    const currentGroup=dbAll(groupType).find(g=>String(g.id)===currentId);
+    const currentLabel=currentGroup?` · Saat ini: ${currentGroup.nama||currentGroup.kode||currentId}`:(currentId?` · Referensi saat ini tidak ditemukan`: ' · Belum ditempatkan');
+    const meta=[m.dapil,m.status].filter(Boolean).join(' · ');
+    return `<option value="${esc(m.id)}">${esc(m.nama)}${meta?' · '+esc(meta):''}${esc(currentLabel)}</option>`;
+  }).join('');
+  $('#modal').innerHTML=`<div class="row"><h1 style="font-size:17px">Tambah anggota ke ${esc(label)} · ${esc(groupName)}</h1><button type="button" onclick="closeM()">✕</button></div>
+  <form class="form" style="margin-top:12px" id="memberPickerForm">
+    <div class="full hint" style="padding:10px;border-radius:10px;background:var(--bg);border:1px solid var(--line)">Pilih nama dari kolom Nama pada modul Anggota DPRD. Formulir ini hanya menetapkan penempatan dan peran; tidak membuat ulang data anggota.</div>
+    ${candidates.length?`<label class="full">Nama Anggota DPRD<select name="memberId" required><option value="">— pilih nama anggota —</option>${options}</select></label>`:`<div class="full empty">Tidak ada nama Anggota DPRD yang tersedia untuk ditambahkan. Periksa atau tambahkan data di modul Anggota DPRD terlebih dahulu.</div>`}
+    <label class="full">Peran dalam ${esc(label)}<select name="role" required><option value="Anggota" selected>Anggota</option><option value="Ketua">Ketua</option><option value="Wakil Ketua">Wakil Ketua</option><option value="Sekretaris">Sekretaris</option></select></label>
+    <div class="full" id="memberPickerError" style="display:none;color:var(--bad);padding:8px 10px;border:1px solid rgba(240,68,56,.35);background:rgba(240,68,56,.06);border-radius:8px"></div>
+    <div class="full row" style="margin-top:6px"><span class="hint">Nama diambil dari data induk Anggota DPRD.</span><span><button type="button" onclick="closeM()">Batal</button> <button class="btn-p" type="submit" ${candidates.length?'':'disabled'}>Simpan penempatan</button></span></div>
+  </form>`;
+  $('#ov').classList.add('show');
+  $('#memberPickerForm').onsubmit=async e=>{
+    e.preventDefault();
+    const fd=Object.fromEntries(new FormData(e.target));
+    const member=dbAll('anggota').find(m=>String(m.id)===String(fd.memberId));
+    const err=$('#memberPickerError');
+    const showError=message=>{err.textContent=message;err.style.display='block'};
+    if(!member){showError('Pilih nama anggota DPRD yang valid.');return}
+    if(String(member[field]||'')===String(groupId)){showError(`${member.nama} sudah terdaftar pada ${label} ini.`);return}
+    const candidateRow={...member,[field]:String(groupId),[roleField]:String(fd.role||'Anggota')};
+    const validation=validateMembershipEdit('anggota',member.id,member,candidateRow);
+    if(validation){showError(validation);return}
+    const oldId=String(member[field]||'');
+    if(oldId){
+      const oldGroup=dbAll(groupType).find(g=>String(g.id)===oldId);
+      const oldName=oldGroup?(oldGroup.nama||oldGroup.kode||oldId):`referensi ${oldId} yang tidak dikenal`;
+      if(!confirm(`${member.nama} saat ini sudah ditempatkan pada ${label.toLowerCase()} "${oldName}".\n\nJika dilanjutkan, penempatan akan dipindahkan ke "${groupName}". Data induk anggota dan penempatan pada jenis kelompok lain tidak dihapus.\n\nLanjutkan?`))return;
+    }
+    const list=TABLES.anggota||[];
+    const index=list.findIndex(m=>String(m.id)===String(member.id));
+    if(index<0){showError('Data Anggota DPRD tidak ditemukan lagi. Muat ulang modul dan coba kembali.');return}
+    const updated={...member,[field]:String(groupId),[roleField]:String(fd.role||'Anggota'),diubah:today()};
+    const submit=e.target.querySelector('button[type="submit"]');
+    if(submit)submit.disabled=true;
+    try{
+      if(CLOUD)await arkaWrite('anggota',updated,false,'TETAPKAN PENEMPATAN');
+      list[index]=updated;
+      resolveRefs();
+      logAudit('TETAPKAN PENEMPATAN','anggota',updated);
+      closeM();
+      toast(`${member.nama} berhasil ditempatkan pada ${label} ${groupName}`);
+      renderModule(groupType);
+    }catch(error){
+      if(submit)submit.disabled=false;
+      const message=error?.message||String(error);
+      showError(`Penempatan belum dapat dipastikan tersimpan: ${message}. Periksa izin Supabase, lalu muat ulang data sebelum mencoba kembali.`);
+      if(CLOUD){try{await arkaLoad();}catch(_){} }
+    }
+  };
+}
+
+function updateMembershipAssignment(groupType, member, patch, successText){
+  if(!canManageMembership(groupType)){toast('Anda tidak memiliki hak untuk mengubah penempatan pada modul ini');return false}
+  const list=TABLES.anggota||[];
+  const index=list.findIndex(x=>String(x.id)===String(member.id));
+  if(index<0){toast('Data Anggota DPRD tidak ditemukan');return false}
+  const updated={...list[index],...patch,diubah:today()};
+  list[index]=updated;
+  if(['anggota','komisi','fraksi'].includes(groupType))resolveRefs();
+  logAudit('LEPAS PENEMPATAN','anggota',updated);
+  if(CLOUD){
+    arkaWrite('anggota',updated,false,'LEPAS PENEMPATAN').catch(e=>{
+      toast('Perubahan belum tersimpan di server: '+e.message+'. Periksa kebijakan RLS Supabase untuk perubahan penempatan anggota.');
+      arkaLoad().then(()=>go()).catch(loadError=>toast('Gagal memuat ulang data: '+loadError.message));
+    });
+  }
+  toast(successText);
+  renderModule(groupType);
+  return true;
+}
+function removeMemberFromGroup(groupType,groupId,memberId){
+  // Melepas penempatan dari daftar Fraksi/Komisi saja; record induk tetap tersimpan.
+  if(!['komisi','fraksi'].includes(groupType)){toast('Jenis kelompok tidak valid');return}
+  if(!canManageMembership(groupType)){toast('Anda tidak memiliki hak untuk mengubah penempatan pada modul ini');return}
+  const isKomisi=groupType==='komisi';
+  const field=isKomisi?'komisi':'fraksi';
+  const roleField=isKomisi?'peranKomisi':'peranFraksi';
+  const group=dbAll(groupType).find(g=>String(g.id)===String(groupId));
+  const member=dbAll('anggota').find(m=>String(m.id)===String(memberId));
+  if(!group||!member||String(member[field]||'')!==String(groupId)){toast('Penempatan anggota tidak ditemukan atau sudah berubah');renderModule(groupType);return}
+  const groupLabel=isKomisi?'Komisi':'Fraksi';
+  const memberName=member.nama||'Anggota tanpa nama';
+  const groupName=group.nama||group.kode||groupId;
+  if(!confirm(`Hapus ${memberName} dari ${groupLabel} "${groupName}"?\n\nData induk Anggota DPRD tetap tersimpan. Hanya penempatan ${groupLabel.toLowerCase()} dan perannya yang dikosongkan.`))return;
+  updateMembershipAssignment(groupType,member,{[field]:'',[roleField]:''},`${memberName} berhasil dilepas dari ${groupLabel}`);
+}
+function removeOrphanMembership(groupType,memberId){
+  if(!['komisi','fraksi'].includes(groupType)||!canManageMembership(groupType)){toast('Anda tidak memiliki hak untuk mengubah penempatan pada modul ini');return}
+  const isKomisi=groupType==='komisi';
+  const field=isKomisi?'komisi':'fraksi';
+  const roleField=isKomisi?'peranKomisi':'peranFraksi';
+  const member=dbAll('anggota').find(m=>String(m.id)===String(memberId));
+  const known=new Set(dbAll(groupType).map(g=>String(g.id)));
+  if(!member||!member[field]||known.has(String(member[field]))){toast('Referensi yang tidak terhubung tidak ditemukan atau sudah diperbaiki');renderModule(groupType);return}
+  const label=isKomisi?'Komisi':'Fraksi';
+  if(!confirm(`Hapus penempatan ${member.nama||'anggota ini'} yang tidak terhubung ke data master ${label.toLowerCase()}?\n\nRecord Anggota DPRD tetap tersimpan; hanya referensi ${label.toLowerCase()} yang tidak valid dan perannya yang dikosongkan.`))return;
+  updateMembershipAssignment(groupType,member,{[field]:'',[roleField]:''},`Penempatan ${label.toLowerCase()} yang tidak terhubung berhasil dihapus`);
+}
+function turunanRows(opt,groupId){const [src,gf,pf,pv]=opt;return dbAll(src).filter(m=>String(m[gf]||'')===String(groupId)&&m[pf]===pv&&m.status!=='Nonaktif')}
+function turunanDisplayName(opt,row){const src=opt&&opt[0];if(src==='keanggotaan-akd'){const m=dbAll('anggota').find(x=>String(x.id)===String(row.anggota||''));return m?(m.nama||''):'Anggota tidak terhubung'}return row.nama||''}
+function turunanText(opt,groupId){return turunanRows(opt,groupId).map(m=>turunanDisplayName(opt,m)).filter(Boolean).join(', ')}
 function cellVal(r,c){
   const [k,,ty,opt]=c, v=r[k];
+  if(ty==='turunan'){const names=turunanRows(opt,r.id).map(m=>turunanDisplayName(opt,m)).filter(Boolean);return names.length?esc(names.join(', '))+(names.length>1?' <span class="pill s-Tertunda">ganda</span>':''):'<span class="pill s-Tertunda">Belum ditetapkan</span>'}
   if(ty==='hit')return fmt(dbAll(opt[0]).filter(x=>String(x[opt[1]]||'')===String(r.id)&&!(opt[2]||[]).includes(x.status)).length);
   if(k==='status')return `<span class="pill s-${esc(v)}">${esc(v)}</span>`;
   if(ty==='rel'){const t=dbAll(opt).find(x=>String(x.id)===String(v));return t?esc(t.nama||t.kode):(v?`<span class="pill s-Tertunda">Belum terhubung: ${esc(v)}</span>`:'<span class="sub">—</span>')}
@@ -840,21 +996,75 @@ function resolveRefs(){
     });
   }));
 }
-function validateMembershipEdit(t,id,row,fd){
-  if(t==='anggota'&&id){
-    for(const field of ['fraksi','komisi']){
-      const oldValue=String(row[field]||''), newValue=String(fd[field]||'');
-      if(oldValue===newValue||!oldValue)continue;
-      const group=dbAll(field).find(g=>String(g.id)===oldValue);
-      if(group&&String(group.ketua||'')===String(row.id)){
-        return `Anggota ${row.nama||''} masih tercatat sebagai Ketua ${LABEL[field]} "${group.nama||group.kode}". Ubah ketua pada modul ${LABEL[field]} terlebih dahulu, baru pindahkan anggota ini.`;
+const PERAN_GRUP={fraksi:{field:'fraksi',peran:'peranFraksi'},komisi:{field:'komisi',peran:'peranKomisi'}};
+function migrateLegacyKetua(){
+  // Data lama menyimpan Ketua pada master Komisi/Fraksi. Peran Ketua Komisi/Fraksi
+  // tetap bersumber dari Anggota DPRD; nilai legacy dihapus dari salinan memori.
+  const pending=[];
+  [['komisi','komisi','peranKomisi'],['fraksi','fraksi','peranFraksi']].forEach(([gt,field,peran])=>{
+    dbAll(gt).forEach(g=>{
+      const raw=String(g.ketua||'').trim(), legacy=raw.toLowerCase();
+      if(!legacy){delete g.ketua;return}
+      const m=dbAll('anggota').find(x=>String(x.id)===raw||String(x.nama||'').trim().toLowerCase()===legacy);
+      const sudahAdaKetua=dbAll('anggota').some(x=>String(x[field]||'')===String(g.id)&&x[peran]==='Ketua'&&x.status!=='Nonaktif');
+      if(m&&!sudahAdaKetua&&String(m[field]||'')===String(g.id)&&m.status!=='Nonaktif'&&m[peran]!=='Ketua'){m[peran]='Ketua';pending.push(m)}
+      delete g.ketua;
+    });
+  });
+  if(CLOUD)pending.forEach(m=>arkaWrite('anggota',m,false).catch(e=>toast('Gagal menyimpan migrasi Ketua: '+e.message)));
+
+  // Migrasi kompatibilitas untuk data lama modul Alat Kelengkapan: nama Ketua yang
+  // dulu diketik bebas dipindah menjadi relasi AKD–Anggota DPRD, tanpa mengarang anggota lain.
+  dbAll('alat').forEach(g=>{
+    const raw=String(g.ketua||'').trim();
+    if(raw){
+      const legacy=raw.toLowerCase();
+      const m=dbAll('anggota').find(x=>String(x.id)===raw||String(x.nama||'').trim().toLowerCase()===legacy);
+      if(m){
+        const exists=dbAll('keanggotaan-akd').some(x=>String(x.alat)===String(g.id)&&String(x.anggota)===String(m.id));
+        if(!exists){
+          const assignment={id:uid(),dibuat:today(),diubah:today(),kode:`MIG-${g.kode||g.id}`,alat:String(g.id),anggota:String(m.id),peran:'Ketua',status:m.status==='Nonaktif'?'Nonaktif':'Aktif',keterangan:'Dipindahkan dari kolom Ketua lama; mohon verifikasi terhadap susunan resmi.'};
+          const list=TABLES['keanggotaan-akd']=TABLES['keanggotaan-akd']||[];list.push(assignment);logAudit('MIGRASI RELASI','keanggotaan-akd',assignment);
+          if(CLOUD)arkaWrite('keanggotaan-akd',assignment,true,'MIGRASI RELASI').catch(e=>toast('Gagal memindahkan Ketua lama pada '+(g.nama||g.kode)+': '+e.message));
+        }
       }
     }
-  }
-  if((t==='fraksi'||t==='komisi')&&fd.ketua){
-    if(!id)return `Simpan ${LABEL[t].toLowerCase()} terlebih dahulu. Setelah itu tempatkan anggota melalui modul Anggota DPRD, lalu pilih ketua.`;
-    const member=dbAll('anggota').find(m=>String(m.id)===String(fd.ketua));
-    if(!member||String(member[t]||'')!==String(id))return `Ketua yang dipilih harus merupakan anggota yang sudah ditempatkan pada ${LABEL[t].toLowerCase()} ini. Atur keanggotaan melalui modul Anggota DPRD.`;
+    delete g.ketua;
+    delete g.jumlah;
+  });
+  migrateLegacyAKDTypes();
+}
+function migrateLegacyAKDTypes(){
+  // Ubah label generik lama hanya jika nama record cukup jelas untuk pemetaan.
+  // Pengelola yang read-only tidak melakukan migrasi database.
+  if(CLOUD&&!canWrite('alat'))return;
+  dbAll('alat').forEach(g=>{
+    const jenis=String(g.jenis||'').trim().toLowerCase();
+    const nama=String(g.nama||'').trim().toLowerCase();
+    let mapped='';
+    if(jenis==='badan'){
+      if(nama.includes('musyawarah')||nama==='bamus')mapped='Badan Musyawarah';
+      else if(nama.includes('anggaran')||nama==='banggar')mapped='Badan Anggaran';
+      else if(nama.includes('pembentukan perda')||nama.includes('bapemperda'))mapped='Badan Pembentukan Perda';
+      else if(nama.includes('kehormatan')||nama==='bk')mapped='Badan Kehormatan';
+    }else if(jenis==='panitia'&&nama.includes('khusus'))mapped='Panitia Khusus';
+    if(mapped&&mapped!==g.jenis){
+      g.jenis=mapped;g.diubah=today();logAudit('MIGRASI JENIS AKD','alat',g);
+      if(CLOUD)arkaWrite('alat',g,false,'MIGRASI JENIS AKD').catch(e=>toast('Gagal memperbarui jenis AKD '+(g.nama||g.kode)+': '+e.message));
+    }
+  });
+}
+function validateMembershipEdit(t,id,row,fd){
+  // Hanya Anggota DPRD yang menetapkan keanggotaan dan Ketua. Modul Fraksi/Komisi tidak menyimpan pointer.
+  if(t!=='anggota')return '';
+  for(const [grup,{field,peran}] of Object.entries(PERAN_GRUP)){
+    if(fd[peran]!=='Ketua')continue;
+    const label=LABEL[grup];
+    const groupId=String(fd[field]||'');
+    if(!groupId)return `Peran Ketua ${label} hanya dapat diberikan setelah anggota ditempatkan pada ${label.toLowerCase()}.`;
+    if(fd.status==='Nonaktif')return `Anggota Nonaktif tidak dapat menjabat sebagai Ketua ${label}.`;
+    const other=dbAll('anggota').find(m=>String(m.id)!==String(id||'')&&String(m[field]||'')===groupId&&m[peran]==='Ketua'&&m.status!=='Nonaktif');
+    if(other)return `${label} ini sudah memiliki Ketua: ${other.nama}. Ubah peran ${other.nama} menjadi Anggota terlebih dahulu.`;
   }
   return '';
 }
@@ -862,19 +1072,23 @@ function openForm(t,id,preset={}){
   const cols=FIELDS[t]||STD;
   const row=id?dbAll(t).find(r=>r.id===id):{...(preset||{})};
   const relationHint=t==='anggota'
-    ? 'Sumber keanggotaan: pilih Fraksi dan Komisi untuk anggota ini. Daftar anggota serta jumlah anggota pada modul Komisi dan Fraksi akan dihitung otomatis dari pilihan ini.'
+    ? 'Sumber tunggal keanggotaan. Pilih Fraksi dan Komisi beserta peran masing-masing. Ketua Fraksi dan Ketua Komisi ditetapkan dari peran di sini dan tampil otomatis di modul Fraksi dan Komisi. Satu fraksi atau komisi hanya boleh memiliki satu Ketua.'
     : (t==='fraksi'||t==='komisi')
-      ? `Jangan memasukkan anggota di sini. Buat/edit data kelompok ini, lalu atur penempatan anggota di menu Anggota DPRD. Ketua hanya dapat dipilih dari anggota yang sudah ditempatkan pada ${LABEL[t].toLowerCase()} ini.`
-      : '';
+      ? 'Data kelompok ini hanya berisi identitas. Anggota dan Ketua ditetapkan melalui menu Anggota DPRD (kolom Fraksi/Komisi dan Peran).'
+      : t==='alat'
+        ? 'Ketua dan jumlah anggota tidak diinput manual. Keduanya dihitung dari record pada menu Keanggotaan AKD. Gunakan Keterangan untuk mencatat konteks tambahan bila diperlukan. Untuk data Komisi, gunakan modul Komisi agar tidak membuat master ganda.'
+        : t==='keanggotaan-akd'
+          ? 'Pilih AKD dan Anggota DPRD yang sudah ada. Baris ini hanya menyimpan relasi, peran, status, dan catatan; nama anggota tidak disalin menjadi data baru.'
+          : '';
   $('#modal').innerHTML=`<div class="row"><h1 style="font-size:17px">${id?'Ubah':'Tambah'} · ${esc(LABEL[t])}</h1><button onclick="closeM()">✕</button></div>
   <form class="form" style="margin-top:12px" id="f">
   ${relationHint?`<div class="full hint" style="padding:10px;border-radius:10px;background:var(--bg);border:1px solid var(--line)">${esc(relationHint)}</div>`:''}
   <div class="full" id="formError" style="display:none;color:var(--bad);padding:8px 10px;border:1px solid rgba(240,68,56,.35);background:rgba(240,68,56,.06);border-radius:8px"></div>
-  ${cols.filter(c=>c[2]!=='hit').map(([k,l,ty,opt,ex])=>{
+  ${cols.filter(c=>c[2]!=='hit'&&c[2]!=='turunan').map(([k,l,ty,opt,ex])=>{
     const v=row[k]??'';
     const full=ty==='ta'||k==='keterangan'?'full':'';
     let inp;
-    if(ty==='sel')inp=`<select name="${k}">${opt.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+    if(ty==='sel'){const blank=ex&&ex.opsional&&!opt.includes(v)?'<option value="">— belum diisi —</option>':'';const legacy= v&&!opt.includes(v)?`<option value="${esc(v)}" selected>${esc(v)} (data lama; perbarui jika diperlukan)</option>`:'';inp=`<select name="${k}">${blank}${legacy}${opt.map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select>`;}
     else if(ty==='rel'){
       let lst=dbAll(opt), lbl=l, placeholder='— pilih —', leaderRelation=!!(ex&&ex.via&&opt==='anggota'&&(t==='fraksi'||t==='komisi'));
       if(leaderRelation){
@@ -902,6 +1116,11 @@ function openForm(t,id,preset={}){
     cols.forEach(([k,,ty])=>{if(ty==='num')fd[k]=Number(fd[k]||0)});
     // Select ketua yang disediakan khusus untuk sebuah kelompok boleh kosong,
     // tetapi tidak boleh menunjuk ke anggota kelompok lain.
+    if(t==='keanggotaan-akd'){
+      if(!fd.alat||!fd.anggota){const err=$('#formError');err.textContent='Pilih Alat Kelengkapan dan Anggota DPRD.';err.style.display='block';return;}
+      const duplicate=dbAll('keanggotaan-akd').find(x=>String(x.id)!==String(id||'')&&String(x.alat)===String(fd.alat)&&String(x.anggota)===String(fd.anggota));
+      if(duplicate){const err=$('#formError');err.textContent='Anggota tersebut sudah memiliki record keanggotaan pada AKD ini. Ubah record yang ada agar jumlah anggota tidak terhitung ganda.';err.style.display='block';return;}
+    }
     const validation=validateMembershipEdit(t,id,row,fd);
     if(validation){const err=$('#formError');err.textContent=validation;err.style.display='block';return;}
     dbSave(t,{...row,...fd,id:id||undefined});
@@ -910,21 +1129,104 @@ function openForm(t,id,preset={}){
     renderModule(returnModule);
   };
 }
-function refsTo(t,id){
-  const out=[];
+function refsToRecords(t,id){
+  // Ambil record yang benar-benar menunjuk ke master ini, termasuk modul selain Anggota DPRD.
+  // Kelompokkan per record agar beberapa kolom relasi dalam record yang sama diperbarui sekaligus.
+  const refs=new Map();
   DATA_MODS.forEach(t2=>(FIELDS[t2]||STD).forEach(c=>{
     if(c[2]!=='rel'||c[3]!==t)return;
-    const n=dbAll(t2).filter(r=>r[c[0]]===id&&!(t2===t&&r.id===id)).length;
-    if(n)out.push(LABEL[t2]+' ('+n+' record, kolom '+c[1]+')');
+    dbAll(t2).forEach(r=>{
+      if(String(r[c[0]]??'')!==String(id)||(t2===t&&String(r.id)===String(id)))return;
+      const key=String(t2)+'::'+String(r.id);
+      if(!refs.has(key))refs.set(key,{module:t2,row:{...r},fields:[]});
+      const entry=refs.get(key);
+      if(!entry.fields.some(f=>f.key===c[0]))entry.fields.push({key:c[0],label:c[1]});
+    });
   }));
-  return out;
+  return [...refs.values()];
 }
-function delRow(t,id){ const used=refsTo(t,id); if(used.length){ alert('Record ini tidak dapat dihapus karena masih dipakai oleh:\n- '+used.join('\n- ')+'\n\nPindahkan atau hapus data tersebut terlebih dahulu.'); return } if(!confirm('Hapus record ini? Tindakan tercatat di audit trail.'))return; dbDelete(t,id); toast('Record dihapus'); renderModule(t) }
+function describeReferences(refs){
+  const summary=new Map();
+  refs.forEach(ref=>ref.fields.forEach(field=>{
+    const key=LABEL[ref.module]+' (kolom '+field.label+')';
+    summary.set(key,(summary.get(key)||0)+1);
+  }));
+  return [...summary.entries()].map(([label,count])=>`${label} (${count} record)`).join('\n- ');
+}
+async function delRow(t,id){
+  if(!canDeleteRecord(t)){toast('Peran Anda tidak memiliki hak untuk menghapus record ini');return}
+  const row=dbAll(t).find(r=>String(r.id)===String(id));
+  if(!row){toast('Record tidak ditemukan');return}
+  const nama=String(row.nama||row.kode||id);
+  const label=t==='komisi'?'Komisi':t==='fraksi'?'Fraksi':'record';
+  const refs=refsToRecords(t,id);
+  // Pertahankan aturan integritas utama: master Komisi/Fraksi tidak boleh dihapus
+  // jika masih menjadi penempatan anggota; relasi ini harus dibenahi dari sumbernya.
+  const memberRefs=refs.filter(ref=>ref.module==='anggota');
+  if(memberRefs.length){
+    alert(`${label} "${nama}" belum dapat dihapus karena masih digunakan oleh Anggota DPRD:\n- ${describeReferences(memberRefs)}\n\nLepaskan atau pindahkan penempatan anggota terlebih dahulu melalui modul Anggota DPRD, kemudian coba lagi.`);
+    return;
+  }
+  const akdMembershipRefs=(t==='alat')?refs.filter(ref=>ref.module==='keanggotaan-akd'):[];
+  const memberAKDRefs=(t==='anggota')?refs.filter(ref=>ref.module==='keanggotaan-akd'):[];
+  if(akdMembershipRefs.length){alert(`Alat Kelengkapan "${nama}" masih memiliki record keanggotaan pada menu Keanggotaan AKD. Hapus atau nonaktifkan record keanggotaannya terlebih dahulu agar tidak meninggalkan relasi yatim.`);return}
+  if(memberAKDRefs.length){alert(`Anggota DPRD "${nama}" masih tercatat pada Keanggotaan AKD. Hapus atau nonaktifkan record keanggotaannya terlebih dahulu agar relasi tetap konsisten.`);return}
+  const cannotEdit=refs.filter(ref=>!canWrite(ref.module));
+  if(cannotEdit.length){
+    const blocked=[...new Set(cannotEdit.map(ref=>LABEL[ref.module]||ref.module))].join(', ');
+    alert(`${label} "${nama}" masih dirujuk oleh data pada modul ${blocked}. Akun Anda tidak memiliki hak untuk mengubah semua record terkait, sehingga penghapusan dibatalkan. Minta admin atau pengelola modul terkait untuk memperbaiki referensinya.`);
+    return;
+  }
+  const prompt=refs.length
+    ? `Hapus ${label.toLowerCase()} "${nama}"?\n\nMaster ini masih dirujuk oleh:\n- ${describeReferences(refs)}\n\nJika dilanjutkan, hanya referensi ${label.toLowerCase()} pada record terkait yang akan dikosongkan. Record Hearing/kegiatan/anggota terkait TIDAK dihapus. Aplikasi akan mencatat perubahan melalui mekanisme audit yang tersedia.\n\nLanjutkan?`
+    : `Hapus ${label.toLowerCase()} "${nama}"? Tindakan ini tidak dapat dibatalkan dan akan dicatat di audit trail.`;
+  if(!confirm(prompt))return;
+
+  // Putuskan relasi terlebih dahulu (dengan audit), baru hapus master. Jika salah satu langkah
+  // gagal, coba kembalikan relasi yang sudah diubah agar data tidak tertinggal setengah jalan.
+  const attempted=[];
+  try{
+    for(const ref of refs){
+      const updated={...ref.row,diubah:today()};
+      ref.fields.forEach(field=>{updated[field.key]=''});
+      const operation={module:ref.module,original:{...ref.row},updated};
+      attempted.push(operation);
+      if(CLOUD)await arkaWrite(ref.module,updated,false,'PUTUS REFERENSI');
+      const list=TABLES[ref.module]||[];
+      const idx=list.findIndex(r=>String(r.id)===String(ref.row.id));
+      if(idx<0)throw new Error(`Record terkait pada modul ${LABEL[ref.module]||ref.module} tidak ditemukan lagi`);
+      list[idx]=updated;
+      logAudit('PUTUS REFERENSI',ref.module,updated);
+    }
+    if(CLOUD)await arkaDelete(t,id);
+    TABLES[t]=(TABLES[t]||[]).filter(r=>String(r.id)!==String(id));
+    logAudit('HAPUS',t,row);
+    toast(`${label} berhasil dihapus${refs.length?' dan referensi terkait dikosongkan':''}`);
+    renderModule(t);
+  }catch(e){
+    const rollbackErrors=[];
+    for(const op of attempted.reverse()){
+      try{
+        if(CLOUD)await arkaWrite(op.module,op.original,false,'PEMULIHAN REFERENSI');
+        const list=TABLES[op.module]||[];
+        const idx=list.findIndex(r=>String(r.id)===String(op.original.id));
+        if(idx>=0)list[idx]={...op.original};
+      }catch(rollbackError){rollbackErrors.push(rollbackError.message||String(rollbackError));}
+    }
+    if(CLOUD){
+      try{await arkaLoad();}catch(loadError){rollbackErrors.push(loadError.message||String(loadError));}
+    }
+    renderModule(t);
+    const extra=rollbackErrors.length?` Sebagian pemulihan otomatis tidak berhasil; muat ulang data dan periksa record terkait. Detail: ${rollbackErrors.join('; ')}`:'';
+    toast(`Penghapusan ${label.toLowerCase()} dibatalkan: ${e.message||e}.${extra}`);
+  }
+}
 function closeM(){ $('#ov').classList.remove('show') }
 
 /* ============ EXPORT ============ */
 function exportFieldValue(t,r,c){
   const [k,,ty,opt]=c;
+  if(ty==='turunan')return turunanText(opt,r.id);
   if(ty==='hit')return dbAll(opt[0]).filter(x=>String(x[opt[1]]||'')===String(r.id)&&!(opt[2]||[]).includes(x.status)).length;
   if(ty==='rel') { const target=dbAll(opt).find(x=>String(x.id)===String(r[k])); return target?(target.nama||target.kode||target.id):(r[k]||''); }
   return r[k]??'';
@@ -1038,7 +1340,7 @@ function arkaFromRow(t, r) {
 function arkaToRow(t, row) {
   const out = { id: row.id, dibuat: row.dibuat || null, diubah: row.diubah || null };
   for (const [k, ty] of Object.entries(ARKA_TYPES[t] || {})) {
-    if (ty === 'hit') continue;
+    if (ty === 'hit' || ty === 'turunan') continue;
     let v = row[k];
     if (v === '' || v === undefined) v = null;
     if (ty === 'num' && v !== null) v = Number(v);
@@ -1055,13 +1357,14 @@ async function arkaLoad() {
   // Anggota DPRD adalah sumber keanggotaan. Normalisasi data lama yang masih
   // menyimpan nama/kode fraksi/komisi/ketua agar tampilan dan perhitungan selaras.
   resolveRefs();
+  migrateLegacyKetua();
 }
-async function arkaWrite(t, row, isNew) {
+async function arkaWrite(t, row, isNew, auditAction) {
   const { error } = await sb.from(arkaTn(t)).upsert(arkaToRow(t, row));
   if (error) throw error;
   const { data: u } = await sb.auth.getUser();
   const { error: e2 } = await sb.from('audit_log').insert({
-    aksi: isNew ? 'TAMBAH' : 'UBAH', modul: t,
+    aksi: auditAction || (isNew ? 'TAMBAH' : 'UBAH'), modul: t,
     ref: row.nama || row.kode || row.id, user_name: u?.user?.email ?? 'tidak diketahui'
   });
   if (e2) throw e2;
@@ -1406,63 +1709,205 @@ function buatKamus(){
 }
 
 /* ============ 1. PEMERIKSAAN DATA PER MODUL ============ */
+/* Kosong yang memang dapat diterima menurut konteks bisnis, bukan sekadar karena field nullable. */
+function auditEmptyIsExpected(t,r,k){
+  if(t==='anggota' && k==='komisi'){
+    const jabatan=String(r.jabatan||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLocaleLowerCase('id-ID').replace(/[._,]/g,' ').replace(/\\s+/g,' ').trim();
+    // Hanya jabatan Pimpinan DPRD yang dikenali secara eksplisit yang dikecualikan.
+    // Jangan mengecualikan Wakil Ketua Komisi/Fraksi hanya karena mengandung frasa "Wakil Ketua".
+    const ketuaDprd=/(^|\\b)(ketua dprd|ketua dewan|pimpinan dprd|pimpinan dewan)(\\b|$)/.test(jabatan);
+    const wakilKetuaDprd=/^wakil ketua(?:\\s+(?:i{1,3}|iv|v|[1-3]))?(?:\\s+(?:dprd|dewan)(?:\\s+kabupaten.*)?)?$/.test(jabatan);
+    if(ketuaDprd||wakilKetuaDprd) return true;
+  }
+  // Node tingkat atas tidak mempunyai induk.
+  if(t==='pohon' && k==='induk' && String(r.level||'')==='Sasaran Strategis') return true;
+  // Tanggal penetapan belum harus ada ketika Propemperda masih dalam persiapan/proses.
+  if(t==='propemperda' && k==='tanggal' && String(r.status||'')!=='Selesai') return true;
+  // Produk hukum berstatus Draft dapat belum ditautkan ke regulasi yang sudah tercatat.
+  if(t==='jdih' && k==='regulasi' && String(r.status||'')==='Draft') return true;
+  return false;
+}
+function auditMissingMessage(t,r,k,lbl,tingkat){
+  if(t==='cascading' && k==='tujuan')
+    return 'Sasaran Tujuan belum dipilih; tautkan ke sasaran yang benar jika hubungan cascading sudah ditetapkan.';
+  if(t==='monitoring' && k==='sasaran')
+    return 'Sasaran belum dipilih; tautkan monitoring ke sasaran yang menjadi objek pemantauan.';
+  if(t==='apbd' && k==='ppas')
+    return 'Belum terhubung ke PPAS induk; tautkan ke PPAS yang sesuai jika record induknya tersedia. Untuk data historis, catat konteks pada Keterangan.';
+  if(t==='anggota' && k==='komisi'){
+    const jabatan=String(r.jabatan||'').trim();
+    if(!jabatan) return 'Komisi belum diisi dan kolom Jabatan juga kosong/tidak terbaca. Lengkapi jabatan dari sumber resmi agar pemeriksaan dapat membedakan Pimpinan DPRD dari anggota yang perlu ditempatkan pada Komisi.';
+    return 'Anggota belum ditempatkan pada Komisi (Jabatan tercatat: '+jabatan+'). Konfirmasikan susunan keanggotaan resmi. Pengecualian hanya berlaku bagi jabatan Pimpinan DPRD yang dikenali secara eksplisit.';
+  }
+  if(t==='propemperda' && k==='tanggal')
+    return 'Status Selesai tetapi Tanggal Penetapan belum diisi.';
+  if(t==='jdih' && k==='regulasi')
+    return 'Regulasi Terkait belum dipilih; tautkan ke record Regulasi untuk produk hukum yang sudah ditetapkan.';
+  if(tingkat==='Kritis') return 'Kolom wajib belum diisi.';
+  if(tingkat==='Peringatan' && k==='tanggal')
+    return 'Tanggal belum diisi; lengkapi jika tanggal tersebut sudah ditetapkan pada tahap record ini.';
+  if(tingkat==='Peringatan' && k==='rel')
+    return 'Referensi belum dipilih; periksa apakah hubungan ini sudah harus ditetapkan.';
+  if(tingkat==='Peringatan') return 'Kolom belum diisi; konfirmasikan apakah diperlukan pada tahap record ini.';
+  return 'Nilai belum diisi.';
+}
 function auditModule(t){
   const cols=FIELDS[t]||STD, rows=dbAll(t), out=[], kodeCount={};
   rows.forEach((r,i)=>{
     const ref=r.kode||r.nama||('baris '+(i+1));
-    cols.forEach(([k,lbl,ty,opt,ex])=>{
-      const v=r[k], kosong=v===undefined||v===null||v==='';
+    cols.forEach(([k,lbl,ty,opt,metaRaw])=>{
+      const meta=metaRaw && !Array.isArray(metaRaw) && typeof metaRaw==='object' ? metaRaw : {};
+      const optional=meta.opsional===true || meta.optional===true;
+      const required=meta.wajib===true || meta.required===true || k==='kode' || k==='nama' || (ty==='sel'&&k==='status') || (ty==='rel'&&!optional) || (ty==='date'&&!optional);
+      const v=r[k], kosong=v===undefined||v===null||v===''||(typeof v==='string'&&v.trim()==='');
       const add=(tingkat,pesan)=>out.push({tingkat,ref,kol:lbl,pesan});
+      // Kolom turunan/dihitung bukan sumber input.
+      if(ty==='hit'||ty==='turunan') return;
+      if(kosong){
+        // Bedakan kondisi kosong yang sah menurut konteks dari kekurangan yang perlu ditinjau.
+        if(auditEmptyIsExpected(t,r,k)||optional) return;
+        if(required){
+          const tingkat=(k==='kode'||k==='nama'||meta.wajib===true||meta.required===true)?'Kritis':'Peringatan';
+          add(tingkat,auditMissingMessage(t,r,k,lbl,tingkat));
+        }
+        return;
+      }
       if(ty==='rel'){
-        if(kosong) add('Peringatan','belum dihubungkan ke '+LABEL[opt]);
-        else if(!dbAll(opt).some(x=>x.id===v)) add('Kritis','relasi ke '+LABEL[opt]+' tidak ditemukan');
-        else if(ex&&ex.via){ const m=dbAll(opt).find(x=>x.id===v); if(m&&m[ex.via]!==r.id) add('Peringatan',(m.nama||'Anggota')+' bukan anggota '+LABEL[t]+' ini'); }
+        if(!dbAll(opt).some(x=>x.id===v)) add('Kritis','Referensi tidak ditemukan pada modul '+(LABEL[opt]||opt)+'.');
+        else if(meta.via){ const m=dbAll(opt).find(x=>x.id===v); if(m&&m[meta.via]!==r.id) add('Peringatan','Referensi anggota belum cocok dengan penempatan pada '+(LABEL[t]||t)+'.'); }
       } else if(ty==='sel'){
-        if(kosong) add('Peringatan','status belum diisi');
-        else if(!opt.includes(v)) add('Kritis','nilai "'+v+'" tidak termasuk pilihan');
+        if(!Array.isArray(opt)||!opt.includes(v)) add('Kritis','Nilai "'+v+'" tidak termasuk pilihan yang dikonfigurasi.');
       } else if(ty==='num'){
-        if(!kosong && Number(v)<0) add('Kritis','nilai negatif');
+        const n=Number(v);
+        if(!Number.isFinite(n)) add('Kritis','Nilai bukan angka yang valid.');
+        else if(n<0) add('Kritis','Nilai negatif.');
       } else if(ty==='date'){
-        if(kosong) add('Peringatan','tanggal belum diisi');
+        const parsed=new Date(v);
+        if(Number.isNaN(parsed.getTime())) add('Kritis','Format tanggal tidak valid.');
       } else if(k==='kode'||k==='nama'){
-        if(kosong) add('Kritis','wajib diisi');
+        if(!String(v).trim()) add('Kritis','Kolom wajib belum diisi.');
       }
     });
-    if(r.kode) kodeCount[r.kode]=(kodeCount[r.kode]||0)+1;
+    if(r.kode) kodeCount[String(r.kode).trim().toLocaleLowerCase('id-ID')]=(kodeCount[String(r.kode).trim().toLocaleLowerCase('id-ID')]||0)+1;
   });
-  Object.entries(kodeCount).forEach(([k,n])=>{ if(n>1) out.push({tingkat:'Kritis',ref:k,kol:'Kode',pesan:'kode ganda ('+n+' record)'}) });
+  Object.entries(kodeCount).forEach(([k,n])=>{ if(n>1) out.push({tingkat:'Kritis',ref:k,kol:'Kode',pesan:'Kode ganda ('+n+' record); periksa identitas unik pada modul ini.'}) });
   return out;
 }
 function checkHtml(t){
   const issues=auditModule(t), kr=issues.filter(x=>x.tingkat==='Kritis').length, pr=issues.length-kr;
   const head=`<div class="card" style="margin-bottom:0"><div class="row"><b>Hasil pemeriksaan data · ${esc(LABEL[t])}</b><span class="pill ${kr?'s-Terlambat':'s-Selesai'}">${kr} kritis · ${pr} peringatan</span></div>`;
-  if(!issues.length)return head+'<div class="sub" style="margin-top:6px">Tidak ada temuan. Data modul ini lengkap dan konsisten.</div></div>';
+  if(!issues.length)return head+'<div class="sub" style="margin-top:6px">Tidak ada temuan berdasarkan aturan pemeriksaan yang tersedia. Hasil ini bukan jaminan bahwa seluruh data substantif sudah benar.</div></div>';
   return head+`<div class="tbl" style="margin-top:8px"><table><tr><th>Tingkat</th><th>Record</th><th>Kolom</th><th>Temuan</th></tr>${issues.slice(0,60).map(x=>`<tr><td><span class="pill ${x.tingkat==='Kritis'?'s-Terlambat':'s-Draft'}">${x.tingkat}</span></td><td>${esc(x.ref)}</td><td>${esc(x.kol)}</td><td>${esc(x.pesan)}</td></tr>`).join('')}</table></div>${issues.length>60?`<div class="hint">Menampilkan 60 dari ${issues.length} temuan.</div>`:''}</div>`;
 }
 
 /* ============ 2. PEMERIKSAAN SISTEM (hanya membaca) ============ */
 let PERIKSA_LAST=[];
+let PERIKSA_RUN_AT=null;
+function statusPeriksaClass(status){
+  if(status==='OK') return 's-Selesai';
+  if(status==='Gagal') return 's-Terlambat';
+  if(status==='Peringatan') return 's-Draft';
+  return '';
+}
 async function sysChecks(){
-  const r=[], add=(g,i,s,d)=>r.push({grup:g,item:i,status:s,detail:d});
-  add('Mode','Sumber data',  'OK', CLOUD?'Cloud (Supabase)':'Lokal (data contoh di memori)');
-  add('Browser','Pustaka 3D (three.js)', typeof THREE!=='undefined'?'OK':'Perlu perhatian', typeof THREE!=='undefined'?'Dimuat':'Tidak dimuat; visual panduan tidak tampil');
-  add('Browser','Koneksi internet', navigator.onLine?'OK':'Gagal', navigator.onLine?'Terhubung':'Tidak terhubung');
-  if(CLOUD){
-    add('Akun','Status login', ARKA_ROLE?'OK':'Gagal', ARKA_ROLE?ARKA_NAMA+' ('+ARKA_ROLE+')':'Belum login');
-    let ok=0; const gagal=[];
-    for(const t of DATA_MODS){ const {error}=await sb.from(arkaTn(t)).select('id').limit(1); if(error)gagal.push(LABEL[t]); else ok++; }
-    add('Akses','Baca tabel modul', gagal.length?'Perlu perhatian':'OK', ok+' dari '+DATA_MODS.length+' tabel terbaca'+(gagal.length?'; gagal: '+gagal.slice(0,5).join(', ')+(gagal.length>5?' …':''):''));
+  const r=[], add=(grup,item,status,detail,extra={})=>r.push({grup,item,status,detail,...extra});
+  add('Aplikasi','Versi aplikasi','Informasi',`ARKA ${ARKA_APP_VERSION} · build ${ARKA_BUILD_DATE}`);
+  add('Mode','Sumber data',CLOUD?'Informasi':'Peringatan',CLOUD?'Mode cloud aktif: data modul dibaca melalui Supabase.':'Mode lokal aktif: perubahan berada di memori browser dan tidak menjadi penyimpanan cloud permanen.');
+
+  // Pemeriksaan browser bersifat diagnostik, bukan bukti bahwa backend tersedia.
+  try {
+    const key='arka_syscheck_'+Date.now();
+    localStorage.setItem(key,'ok'); localStorage.removeItem(key);
+    add('Browser','Penyimpanan lokal','OK','Browser mengizinkan akses localStorage untuk preferensi dan hasil Daftar Uji.');
+  } catch(e) {
+    add('Browser','Penyimpanan lokal','Peringatan','localStorage tidak dapat ditulis; hasil Daftar Uji mungkin hanya bertahan selama halaman terbuka.');
   }
-  let kritis=0, peringatan=0, records=0; const kosong=[];
+  add('Browser','Koneksi browser',navigator.onLine?'Informasi':'Peringatan',navigator.onLine?'Browser melaporkan jaringan aktif; ini tidak dengan sendirinya membuktikan Supabase dapat dijangkau.':'Browser melaporkan offline; koneksi ke Supabase kemungkinan tidak tersedia.');
+  add('Browser','Pustaka 3D (three.js)',typeof THREE!=='undefined'?'OK':'Peringatan',typeof THREE!=='undefined'?'Pustaka dimuat.':'Pustaka tidak dimuat; visual 3D pada panduan tidak tersedia, tetapi pemeriksaan data tetap dapat berjalan.');
+
+  if(!CLOUD){
+    const cfg=arkaReadConfig();
+    const reasons=[];
+    if(!cfg.url && !SUPABASE_URL) reasons.push('Project URL belum tersedia');
+    if(!cfg.anonKey) reasons.push('anon/publishable key belum diisi');
+    if(typeof supabase==='undefined') reasons.push('pustaka Supabase belum dimuat');
+    add('Cloud','Konfigurasi Supabase','Peringatan',(reasons.join('; ')||'Koneksi cloud belum aktif')+'. Pemeriksaan database dilewati; tidak ada penulisan data cloud.');
+  } else {
+    let cloudUser=null, authError=null;
+    try {
+      const auth=await sb.auth.getUser();
+      authError=auth.error||null; cloudUser=auth.data?.user||null;
+      if(authError) throw authError;
+      if(!cloudUser) add('Akun','Sesi autentikasi','Gagal','Tidak ada sesi Supabase aktif. Login kembali sebelum menggunakan pemeriksaan cloud.');
+      else add('Akun','Sesi autentikasi','OK','Sesi Supabase aktif; detail identitas tidak ditampilkan pada laporan pemeriksaan.');
+    } catch(e) {
+      add('Akun','Sesi autentikasi','Gagal','Sesi tidak dapat diverifikasi. Login kembali atau periksa jaringan dan konfigurasi Supabase.');
+    }
+    if(cloudUser){
+      try {
+        const {data:profile,error}=await sb.from('profiles').select('peran,unit').eq('id',cloudUser.id).maybeSingle();
+        if(error) add('Akun','Profil dan peran','Gagal','Profil tidak dapat dibaca. Periksa tabel profiles dan kebijakan RLS.');
+        else if(!profile||!profile.peran) add('Akun','Profil dan peran','Gagal','Profil pengguna atau peran belum tersedia.');
+        else if(profile.peran!==ARKA_ROLE || (profile.peran==='pengelola'&&!profile.unit)) add('Akun','Profil dan peran','Peringatan','Peran/unit pada profil tidak sepenuhnya cocok dengan konteks login aplikasi. Login ulang atau periksa konfigurasi profil.');
+        else add('Akun','Profil dan peran','OK','Profil memiliki peran dan konfigurasi unit yang diperlukan.');
+      } catch(e) {
+        add('Akun','Profil dan peran','Gagal','Pemeriksaan profil gagal dilakukan. Periksa koneksi dan izin baca profiles.');
+      }
+    }
+
+    // Hanya SELECT id dengan limit 1. Pemeriksaan dibatasi dalam kelompok kecil dan tidak melakukan INSERT/UPDATE/DELETE.
+    let tableOk=0; const tableFailed=[]; const batchSize=8;
+    for(let i=0;i<DATA_MODS.length;i+=batchSize){
+      const batch=DATA_MODS.slice(i,i+batchSize);
+      const results=await Promise.all(batch.map(async t=>{
+        try { const {error}=await sb.from(arkaTn(t)).select('id').limit(1); return {t,ok:!error}; }
+        catch(e){ return {t,ok:false}; }
+      }));
+      results.forEach(x=>{ if(x.ok)tableOk++; else tableFailed.push(LABEL[x.t]||x.t); });
+    }
+    add('Cloud','Akses baca tabel modul',tableFailed.length?'Gagal':'OK',`${tableOk} dari ${DATA_MODS.length} tabel modul dapat dibaca dengan query uji baca-saja.`+(tableFailed.length?' Tabel bermasalah: '+tableFailed.slice(0,10).join(', ')+(tableFailed.length>10?' dan lainnya.':'.'):' Tidak ada data bisnis yang diubah.'));
+
+    // Membaca metadata Storage saja; kegagalan dapat disebabkan kebijakan list yang sengaja dibatasi.
+    try {
+      const {error}=await sb.storage.from(ATT_BUCKET).list('',{limit:1});
+      if(error) add('Cloud','Storage lampiran','Peringatan','Folder bucket tidak dapat dibaca oleh sesi ini. Periksa keberadaan bucket dan policy Storage; pemeriksaan ini tidak mengunggah, mengubah, atau menghapus berkas.');
+      else add('Cloud','Storage lampiran','OK','Endpoint dan operasi baca daftar bucket berhasil. Upload/hapus berkas tidak diuji untuk menghindari perubahan pada data produksi.');
+    } catch(e) {
+      add('Cloud','Storage lampiran','Peringatan','Status bucket tidak dapat dipastikan. Pemeriksaan bersifat baca-saja dan tidak mengubah berkas.');
+    }
+
+    // Skema dan bucket Daftar Uji: hanya operasi baca; migration tidak dijalankan otomatis dari browser.
+    const ujiTableNames=['uji_sesi','uji_hasil','uji_bukti'];
+    const ujiTableChecks=await Promise.all(ujiTableNames.map(async name=>{
+      try { const {error}=await sb.from(name).select('id').limit(1); return {name,ok:!error}; }
+      catch(e){return {name,ok:false};}
+    }));
+    const missingUjiTables=ujiTableChecks.filter(x=>!x.ok).map(x=>x.name);
+    add('Cloud','Skema Daftar Uji',missingUjiTables.length?'Peringatan':'OK',missingUjiTables.length?'Tabel hasil uji belum seluruhnya dapat dibaca: '+missingUjiTables.join(', ')+'. Jalankan ARKA_Migrasi_Daftar_Uji_v16.sql dan periksa RLS.':'Tabel sesi, hasil, dan bukti uji dapat dibaca; pemeriksaan tidak mengubah data.');
+    try {
+      const {error}=await sb.storage.from(UJI_EVIDENCE_BUCKET).list('',{limit:1});
+      if(error)add('Cloud','Storage bukti pengujian','Peringatan','Bucket khusus bukti uji belum tersedia atau policy baca menolak akses. Periksa migrasi SQL v16; tidak ada berkas yang diubah.');
+      else add('Cloud','Storage bukti pengujian','OK','Bucket privat bukti pengujian dapat diakses untuk operasi baca. Upload/hapus tidak diuji pada Pemeriksaan Sistem.');
+    } catch(e){add('Cloud','Storage bukti pengujian','Peringatan','Bucket bukti uji belum dapat diverifikasi; pemeriksaan tetap bersifat baca-saja.');}
+  }
+
+  let kritis=0, peringatan=0, records=0; const kosong=[], rincianTemuan=[];
   DATA_MODS.forEach(t=>{
-    const is=auditModule(t); kritis+=is.filter(x=>x.tingkat==='Kritis').length; peringatan+=is.length-is.filter(x=>x.tingkat==='Kritis').length;
+    const issues=auditModule(t);
+    kritis+=issues.filter(x=>x.tingkat==='Kritis').length;
+    peringatan+=issues.filter(x=>x.tingkat!=='Kritis').length;
+    issues.forEach(x=>rincianTemuan.push({...x,modul:t,modulLabel:LABEL[t]||t}));
     records+=dbAll(t).length; if(!dbAll(t).length)kosong.push(LABEL[t]);
   });
-  add('Data','Jumlah modul dan record', 'OK', DATA_MODS.length+' modul, '+records+' record');
-  add('Dokumentasi','Sidik struktur', 'OK', sidikStruktur()+' (bandingkan dengan sidik di KAMUS_DATA.md)');
-  add('Data','Modul tanpa data', kosong.length?'Perlu perhatian':'OK', kosong.length?kosong.join(', '):'Semua modul berisi data');
-  add('Data','Temuan kritis', kritis?'Gagal':'OK', kritis+' temuan (relasi putus, nilai di luar pilihan, kode ganda, atau kolom wajib kosong)');
-  add('Data','Peringatan', peringatan?'Perlu perhatian':'OK', peringatan+' peringatan (kolom belum diisi atau relasi belum dihubungkan)');
+  add('Data','Jumlah modul dan record','Informasi',`${DATA_MODS.length} modul dan ${records} record dalam snapshot aplikasi. Ini bukan hitungan ulang dari database; data dibaca dari data yang sudah dimuat ke aplikasi.`);
+  add('Dokumentasi','Sidik struktur','Informasi',`${sidikStruktur()} — pengenal konfigurasi MENU/FIELDS saat ini; bandingkan dengan Kamus Data yang disimpan, karena perbandingan otomatis dengan file eksternal tidak tersedia.`);
+  add('Data','Modul tanpa data',kosong.length?'Peringatan':'OK',kosong.length?`${kosong.length} modul kosong: ${kosong.join(', ')}. Modul kosong belum tentu salah; konfirmasikan apakah memang sudah waktunya diisi.`:'Semua modul memiliki sedikitnya satu record pada snapshot aplikasi.');
+  add('Data','Ringkasan temuan kritis','Informasi',kritis?`${kritis} temuan kritis ditemukan pada snapshot aplikasi. Setiap temuan ditampilkan pada baris Rincian data di bawah, beserta modul, record, kolom, dan sebab yang terdeteksi.`:'Tidak ada temuan kritis dari aturan validasi yang tersedia. Ini bukan jaminan bahwa seluruh data substantif telah benar.');
+  add('Data','Ringkasan peringatan data','Informasi',peringatan?`${peringatan} peringatan ditemukan. Rinciannya ditampilkan per modul/record/kolom di bawah; tinjau sebelum memutuskan apakah perlu diperbaiki.`:'Tidak ada peringatan data dari aturan validasi yang tersedia.');
+  const MAX_DETAIL=100;
+  rincianTemuan.slice(0,MAX_DETAIL).forEach(x=>add('Rincian data',`${x.modulLabel} · ${x.ref} · ${x.kol}`,x.tingkat==='Kritis'?'Gagal':'Peringatan',x.pesan,{moduleId:x.modul}));
+  if(rincianTemuan.length>MAX_DETAIL) add('Data','Batas rincian ditampilkan','Peringatan',`Ditampilkan ${MAX_DETAIL} dari ${rincianTemuan.length} temuan. Ekspor CSV atau jalankan Periksa data per modul untuk melihat rincian lainnya.`);
+  add('Keamanan','Mutasi data selama pemeriksaan','OK','Pemeriksaan Sistem hanya menjalankan validasi lokal dan query baca-saja. Tidak ada operasi tambah, ubah, atau hapus yang dijalankan oleh pemeriksaan ini.');
   return r;
 }
 async function renderPeriksa(){
@@ -1470,64 +1915,644 @@ async function renderPeriksa(){
     $('#view').innerHTML='<div class="empty">Pemeriksaan sistem hanya dapat dibuka oleh admin. Pengelola dan pimpinan dapat memakai "Periksa data" di setiap modul.</div>';
     return;
   }
-  $('#view').innerHTML=`<div class="row"><div><h1>Pemeriksaan Sistem</h1><div class="sub">Hanya membaca data dan tidak mengubah apa pun.</div></div>
+  $('#view').innerHTML=`<div class="row"><div><h1>Pemeriksaan Sistem</h1><div class="sub">Versi ${esc(ARKA_APP_VERSION)} · Pemeriksaan baca-saja. OK = terverifikasi, Informasi = konteks, Peringatan = perlu ditinjau, Gagal = pemeriksaan tidak terpenuhi.</div></div>
     <div class="actions noprint"><button id="pkRun">↻ Jalankan ulang</button><button id="pkCsv">⬇ Unduh laporan (CSV)</button><button id="pkKamus">⬇ Kamus Data (.md)</button></div></div>
+    <div class="card" id="pkMeta" style="margin-bottom:0"><b>Pemeriksaan berjalan…</b></div>
     <div class="card tbl" id="pkTbl"><div class="empty">Memeriksa…</div></div>`;
   $('#pkRun').onclick=()=>renderPeriksa();
   $('#pkCsv').onclick=exportPeriksa;
   $('#pkKamus').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([buatKamus()],{type:'text/markdown;charset=utf-8'})); a.download='KAMUS_DATA.md'; a.click(); };
-  PERIKSA_LAST=await sysChecks();
+  PERIKSA_RUN_AT=new Date().toISOString();
+  const runButton=$('#pkRun'); if(runButton)runButton.disabled=true;
+  try { PERIKSA_LAST=await sysChecks(); }
+  catch(e){ PERIKSA_LAST=[{grup:'Sistem',item:'Pelaksanaan pemeriksaan',status:'Gagal',detail:'Pemeriksaan tidak selesai karena terjadi kesalahan internal. Jalankan ulang; data tidak diubah.'}]; }
   const box=$('#pkTbl'); if(!box)return;
-  const pill=s=>s==='OK'?'s-Selesai':s==='Gagal'?'s-Terlambat':'s-Draft';
-  box.innerHTML=`<table><tr><th>Grup</th><th>Pemeriksaan</th><th>Status</th><th>Keterangan</th></tr>${PERIKSA_LAST.map(x=>`<tr><td>${esc(x.grup)}</td><td>${esc(x.item)}</td><td><span class="pill ${pill(x.status)}">${esc(x.status)}</span></td><td>${esc(x.detail)}</td></tr>`).join('')}</table>`;
+  const tally={OK:0,Informasi:0,Peringatan:0,Gagal:0}; PERIKSA_LAST.forEach(x=>tally[x.status]=(tally[x.status]||0)+1);
+  const meta=$('#pkMeta'); if(meta)meta.innerHTML=`<div class="row"><b>Ringkasan hasil</b><span class="sub">${esc(new Date(PERIKSA_RUN_AT).toLocaleString('id-ID'))} · ARKA ${esc(ARKA_APP_VERSION)}</span></div><div class="kpis" style="margin-top:10px">${kpi('OK',fmt(tally.OK),'pemeriksaan terpenuhi')}${kpi('Informasi',fmt(tally.Informasi),'konteks, bukan masalah')}${kpi('Peringatan',fmt(tally.Peringatan),'perlu ditinjau')}${kpi('Gagal',fmt(tally.Gagal),'perlu ditindaklanjuti')}</div>`;
+  box.innerHTML=`<table><tr><th>Grup</th><th>Pemeriksaan</th><th>Status</th><th>Keterangan</th><th>Aksi</th></tr>${PERIKSA_LAST.map(x=>`<tr><td>${esc(x.grup)}</td><td>${esc(x.item)}</td><td><span class="pill ${statusPeriksaClass(x.status)}">${esc(x.status)}</span></td><td>${esc(x.detail)}</td><td>${x.moduleId&&isDataMod(x.moduleId)?`<button type="button" data-open-check-module="${esc(x.moduleId)}">Buka modul</button>`:'—'}</td></tr>`).join('')}</table>`;
+  box.onclick=e=>{const b=e.target.closest('[data-open-check-module]');if(b)location.hash=b.dataset.openCheckModule;};
+  if(runButton)runButton.disabled=false;
 }
 function exportPeriksa(){
   const e=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const csv='\uFEFF'+['Grup,Pemeriksaan,Status,Keterangan',...PERIKSA_LAST.map(x=>[x.grup,x.item,x.status,x.detail].map(e).join(','))].join('\r\n');
+  const csv='\uFEFF'+['Versi,Waktu Pemeriksaan,Grup,Pemeriksaan,Status,Keterangan',...PERIKSA_LAST.map(x=>[ARKA_APP_VERSION,PERIKSA_RUN_AT||'',x.grup,x.item,x.status,x.detail].map(e).join(','))].join('\r\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download=`ARKA_pemeriksaan_${today()}.csv`; a.click();
+  a.download=`ARKA_pemeriksaan_v${ARKA_APP_VERSION.replace(/[^0-9.]/g,'')}_${today()}.csv`; a.click();
 }
-
 /* ============ 3. DAFTAR UJI MANUAL PER MENU ============ */
-const UJI={};   // {kunci: true} – status centang selama sesi
+/* ============ 3. DAFTAR UJI TERSTRUKTUR, EVIDENCE, DAN RIWAYAT ============ */
+const UJI_LEGACY_STORAGE_KEY='arka_uji_hasil_v2';
+const UJI_LOCAL_SESSIONS_KEY='arka_uji_sesi_v1';
+const UJI_ACTIVE_SESSION_KEY='arka_uji_sesi_aktif_v1';
+const UJI_CLOUD_BACKUP_KEY='arka_uji_backup_cloud_v1';
+const UJI_PENDING_STORAGE_KEY='arka_uji_pending_sync_v1';
+const UJI_STATUSES=['Belum diuji','Lulus','Gagal','Tidak Berlaku'];
+const UJI_IMPACTS=['Belum dinilai','Rendah','Sedang','Tinggi','Kritis'];
+const UJI_FOLLOWUP=['Belum ditangani','Dalam perbaikan','Selesai'];
+const UJI_EVIDENCE_MAX=10*1024*1024;
+const UJI_EVIDENCE_BUCKET='arka-uji-bukti';
+let UJI_SESSIONS=[];
+let UJI_ACTIVE_SESSION=null;
+let UJI_ACTIVE_RESULTS={};
+let UJI_ACTIVE_EVIDENCE={};
+let UJI_IS_CLOUD=false;
+let UJI_CURRENT_USER_ID=null;
+let UJI_NOTICE='';
+function ujiLoadPendingQueue(){try{const v=JSON.parse(localStorage.getItem(UJI_PENDING_STORAGE_KEY)||'{}');return v&&typeof v==='object'&&!Array.isArray(v)?v:{};}catch(_){return {};}}
+function ujiSavePendingQueue(){try{localStorage.setItem(UJI_PENDING_STORAGE_KEY,JSON.stringify(UJI_PENDING_SYNC));}catch(_){ }}
+function ujiPendingKey(sessionId,key){return String(sessionId||'')+'::'+String(key||'');}
+let UJI_PENDING_SYNC=ujiLoadPendingQueue();
+let UJI_HISTORY_RESULT_ROWS=[];
+let UJI_SCENARIO_REGISTRY={};
+let UJI_RENDERED_MODEL={allKeys:[],total:0,groups:[],pageItems:[]};
+let UJI_STORAGE_WARNING_SHOWN=false;
+
+function ujiNormaliseResult(value){
+  value=value&&typeof value==='object'?value:{};
+  return {
+    status:UJI_STATUSES.includes(value.status)?value.status:'Belum diuji',
+    catatan:String(value.catatan||''), bukti:String(value.bukti||''), penguji:String(value.penguji||''),
+    waktuUji:value.waktuUji||null, diubahPada:value.diubahPada||null, versi:String(value.versi||ARKA_APP_VERSION),
+    hasilAktual:String(value.hasilAktual||value.actual_result||''), dampak:UJI_IMPACTS.includes(value.dampak||value.impact_level)?(value.dampak||value.impact_level):'Belum dinilai',
+    reproduksi:String(value.reproduksi||value.reproduction_steps||''), hasilHarapan:String(value.hasilHarapan||value.expected_result||''),
+    statusPerbaikan:UJI_FOLLOWUP.includes(value.statusPerbaikan||value.followup_status)?(value.statusPerbaikan||value.followup_status):'Belum ditangani',
+    catatanPerbaikan:String(value.catatanPerbaikan||value.followup_notes||'')
+  };
+}
+function ujiNormaliseSession(value){
+  return {
+    id:String(value.id||uid()), nama:String(value.nama||'Sesi Uji'), versi_aplikasi:String(value.versi_aplikasi||value.app_version||ARKA_APP_VERSION),
+    mode_sumber:String(value.mode_sumber||value.source_mode||'Lokal'), status:['Berjalan','Selesai'].includes(value.status)?value.status:'Berjalan',
+    mulai_pada:value.mulai_pada||value.started_at||new Date().toISOString(), selesai_pada:value.selesai_pada||value.finished_at||null,
+    dibuat_oleh_nama:String(value.dibuat_oleh_nama||value.created_by_name||'Penguji lokal'), dibuat_oleh:value.dibuat_oleh||value.created_by||null,
+    catatan:String(value.catatan||value.notes||''), jumlah_skenario:Math.max(0,Number(value.jumlah_skenario??value.scenario_total)||0), hasil:value.hasil&&typeof value.hasil==='object'?value.hasil:(value.results&&typeof value.results==='object'?value.results:{})
+  };
+}
+function ujiLoadLocalSessions(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(UJI_LOCAL_SESSIONS_KEY)||'null');
+    if(Array.isArray(saved)&&saved.length){
+      UJI_SESSIONS=saved.map(ujiNormaliseSession).sort((a,b)=>new Date(b.mulai_pada)-new Date(a.mulai_pada));
+      return;
+    }
+  }catch(_){ }
+  let legacy={};
+  try{ const value=JSON.parse(localStorage.getItem(UJI_LEGACY_STORAGE_KEY)||'{}'); if(value&&typeof value==='object'&&!Array.isArray(value))legacy=value; }catch(_){ }
+  const hasLegacy=Object.values(legacy).some(v=>v&&(v.status&&v.status!=='Belum diuji'||v.catatan||v.bukti));
+  const results={};
+  Object.entries(legacy).forEach(([key,value])=>{ if(value&&typeof value==='object')results[key]=ujiNormaliseResult(value); });
+  UJI_SESSIONS=[ujiNormaliseSession({
+    id:uid(),nama:hasLegacy?'Sesi migrasi hasil uji lokal':'Sesi Uji Lokal '+new Date().toLocaleString('id-ID'),
+    versi_aplikasi:ARKA_APP_VERSION,mode_sumber:'Lokal',status:'Berjalan',mulai_pada:new Date().toISOString(),
+    dibuat_oleh_nama:ARKA_NAMA||'Penguji lokal',catatan:hasLegacy?'Memuat hasil dari versi Daftar Uji sebelumnya di browser ini.':'Sesi lokal awal.',hasil:results
+  })];
+  ujiSaveLocalSessions();
+}
+function ujiSaveLocalSessions(){
+  try{
+    if(UJI_ACTIVE_SESSION&&!UJI_IS_CLOUD){
+      UJI_ACTIVE_SESSION.hasil=UJI_ACTIVE_RESULTS;
+      const idx=UJI_SESSIONS.findIndex(s=>s.id===UJI_ACTIVE_SESSION.id);
+      if(idx>=0)UJI_SESSIONS[idx]=UJI_ACTIVE_SESSION;else UJI_SESSIONS.unshift(UJI_ACTIVE_SESSION);
+    }
+    UJI_SESSIONS=UJI_SESSIONS.sort((a,b)=>new Date(b.mulai_pada)-new Date(a.mulai_pada)).slice(0,40);
+    localStorage.setItem(UJI_LOCAL_SESSIONS_KEY,JSON.stringify(UJI_SESSIONS));
+  }catch(e){ if(!UJI_STORAGE_WARNING_SHOWN){UJI_STORAGE_WARNING_SHOWN=true;toast('Sesi/hasil uji lokal tidak dapat disimpan di browser ini. Unduh CSV sebagai cadangan.');} }
+}
+function ujiCanEdit(){return !CLOUD||['admin','pengelola'].includes(ARKA_ROLE);}
+function ujiSessionEditable(){return !!UJI_ACTIVE_SESSION&&UJI_ACTIVE_SESSION.status==='Berjalan'&&UJI_ACTIVE_SESSION.versi_aplikasi===ARKA_APP_VERSION&&ujiCanEdit();}
+function ujiCanFinishSession(){return !!UJI_ACTIVE_SESSION&&UJI_ACTIVE_SESSION.status==='Berjalan'&&ujiCanEdit()&&(!UJI_IS_CLOUD||ARKA_ROLE==='admin'||(UJI_CURRENT_USER_ID&&UJI_ACTIVE_SESSION.dibuat_oleh===UJI_CURRENT_USER_ID));}
+function ujiNewSessionName(){return 'Sesi Uji ARKA · '+new Date().toLocaleString('id-ID');}
+function ujiStableResultId(sessionId,key){
+  // Base64URL deterministik: tidak mengandalkan hash 32-bit yang berisiko tabrakan saat riwayat membesar.
+  const raw=String(sessionId)+'|'+String(key);
+  return 'uji-'+btoa(raw).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function ujiTime(value){if(!value)return '—';const d=new Date(value);return Number.isNaN(d.getTime())?String(value):d.toLocaleString('id-ID');}
+function ujiSafeErr(e){return String(e&&e.message||e||'Kesalahan tidak diketahui').replace(/[\r\n]+/g,' ').slice(0,240);}
+
+const UJI_KHUSUS={
+  anggota:[
+    {id:'sumber-induk',text:'Nama anggota, jabatan, status dan dapil berasal dari record Anggota DPRD yang sama; tidak membuat record anggota duplikat.'},
+    {id:'penempatan',text:'Perubahan penempatan Fraksi/Komisi pada Anggota DPRD tercermin pada daftar anggota terkait setelah data disegarkan.'},
+    {id:'opsional',text:'Field opsional yang belum diisi tidak menyebabkan temuan kritis; field yang terisi tetap divalidasi.'}
+  ],
+  komisi:[
+    {id:'pilih-anggota',text:'Tambah anggota menggunakan dropdown dari master Anggota DPRD, bukan input nama bebas.'},
+    {id:'ketua-jumlah',text:'Ketua dan jumlah anggota aktif mengikuti relasi anggota/peran; tidak bersumber dari angka manual.'},
+    {id:'urut-kode',text:'Daftar terurut natural berdasarkan kode, misalnya K-1, K-2, … K-10.'},
+    {id:'lepas-anggota',text:'Hapus penempatan melepas relasi Komisi tanpa menghapus record induk Anggota DPRD.'},
+    {id:'referensi-lintas',text:'Penghapusan Komisi yang masih dirujuk modul lain memberi keterangan/konfirmasi yang sesuai dan tidak menghapus record terkait secara diam-diam.'}
+  ],
+  fraksi:[
+    {id:'pilih-anggota',text:'Tambah anggota menggunakan dropdown dari master Anggota DPRD.'},
+    {id:'ketua-jumlah',text:'Ketua dan jumlah anggota aktif dihitung dari relasi anggota/peran.'},
+    {id:'urut-kode',text:'Daftar terurut natural berdasarkan kode Fraksi.'},
+    {id:'lepas-anggota',text:'Hapus penempatan Fraksi tidak menghapus record induk Anggota DPRD.'}
+  ],
+  alat:[
+    {id:'jenis-akd',text:'Jenis AKD yang baru disediakan dapat dipilih dan disimpan tanpa constraint database menolak nilai.'},
+    {id:'ketua-jumlah',text:'Ketua dan jumlah anggota aktif diturunkan dari Keanggotaan AKD, bukan diinput manual.'},
+    {id:'tanpa-duplikasi',text:'Data Komisi rinci tetap dikelola pada modul Komisi dan tidak digandakan sebagai master Komisi di modul AKD.'}
+  ],
+  'keanggotaan-akd':[
+    {id:'pilihan-master',text:'Pilihan AKD dan Anggota DPRD diambil dari kedua master terkait.'},
+    {id:'duplikasi',text:'Satu orang tidak dapat tercatat dua kali pada AKD yang sama untuk penempatan yang sama.'},
+    {id:'status-jumlah',text:'Perubahan status keanggotaan memengaruhi jumlah anggota aktif dan Ketua yang ditampilkan.'}
+  ],
+  program:[{id:'relasi-kegiatan',text:'Kegiatan yang dibuat memilih Program induk yang benar; perubahan Program tidak membuat relasi yatim.'}],
+  kegiatan:[{id:'relasi-program-sub',text:'Program induk dan hubungan ke Sub Kegiatan tampil konsisten pada tabel/formulir.'}],
+  subkegiatan:[{id:'relasi-kegiatan',text:'Sub Kegiatan mengacu pada Kegiatan induk yang benar.'}],
+  cascading:[{id:'relasi-sasaran',text:'Sumber dan tujuan Sasaran mengacu ke record yang valid dan tampil sesuai pilihan relasi.'}],
+  pohon:[{id:'relasi-induk',text:'Hubungan induk-anak membentuk struktur yang dapat ditelusuri dan tidak menunjuk ke node yang hilang.'}],
+  iku:[{id:'target-capaian',text:'Target dan capaian digunakan secara konsisten; nilai target nol/kosong tidak menghasilkan Infinity atau NaN pada analitik.'}],
+  iki:[{id:'pegawai',text:'Indikator individu mengacu kepada Pegawai yang benar dan hasilnya tidak menggandakan identitas pegawai.'}],
+  evaluasi:[{id:'sumber-kinerja',text:'Hasil evaluasi mempunyai referensi indikator/monitoring yang dapat ditelusuri, bukan hanya uraian bebas.'}],
+  renstra:[{id:'periode',text:'Periode Renstra dan indikatornya konsisten dengan dokumen Renstra sumber yang disahkan/ditetapkan.'}],
+  evidence:[{id:'bukti-nyata',text:'Setiap baris Evidence diperiksa terhadap bukti/dokumen nyata; catat Gagal bila yang tampil hanya label contoh otomatis tanpa bukti terlampir.'}],
+  'an-sakip':[
+    {id:'rumus',text:'Capaian indikator ditampilkan dengan formula yang tepat serta satuan/target yang sesuai.'},
+    {id:'nol',text:'Target nol atau kosong ditangani tanpa menghasilkan NaN/Infinity; tampilkan N/A atau penjelasan yang jelas.'}
+  ],
+  'an-keu':[{id:'pagu-nol',text:'Pagu nol/kosong tidak menyebabkan pembagian tak terdefinisi dan angka realisasi sesuai sumber Anggaran.'}],
+  'an-puas':[{id:'definisi',text:'Pastikan nilai kepuasan bersumber dari survei kepuasan yang terukur, bukan sekadar persentase Pengaduan/Audiensi/Hearing selesai.'}]
+};
+const UJI_HALAMAN={
+  dash:{label:'Dashboard Eksekutif',tests:[
+    {id:'kpi-sumber',text:'Angka ringkasan dapat ditelusuri ke modul sumber dan tidak berupa angka statis yang tidak dijelaskan.'},
+    {id:'kosong',text:'Data sumber kosong ditampilkan secara wajar tanpa NaN/Infinity atau klaim capaian palsu.'}
+  ]},
+  panduan:{label:'Panduan Input',tests:[
+    {id:'menu',text:'Menu, nama modul, relasi dan arahan di panduan sesuai dengan fungsi aktual aplikasi.'},
+    {id:'visual',text:'Jika Three.js tidak tersedia, informasi alternatif tetap terbaca dan navigasi tidak rusak.'}
+  ]},
+  periksa:{label:'Pemeriksaan Sistem',tests:[
+    {id:'status',text:'OK, Informasi, Peringatan, dan Gagal digunakan dengan makna yang berbeda dan konsisten.'},
+    {id:'opsional',text:'Field opsional yang kosong tidak ditandai sebagai kesalahan; nilai opsional yang tidak valid tetap diperiksa.'},
+    {id:'cloud',text:'Pemeriksaan cloud memakai query baca-saja dan tidak melakukan insert/update/delete.'},
+    {id:'ekspor',text:'CSV menyertakan versi, waktu pemeriksaan, status dan keterangan.'}
+  ]},
+  uji:{label:'Daftar Uji',tests:[
+    {id:'hasil',text:'Status Lulus/Gagal/Tidak Berlaku, catatan, bukti, penguji dan waktu dapat dicatat; Tidak Berlaku mewajibkan alasan.'},
+    {id:'persisten',text:'Hasil tetap tersedia setelah halaman dimuat ulang; sesi/hasil lama tidak tertimpa ketika katalog skenario berubah versi.'},
+    {id:'csv',text:'Ekspor CSV berisi status, catatan, penguji, waktu, versi, dampak, langkah reproduksi, tindak lanjut dan referensi bukti.'},
+    {id:'csv-representatif',text:'Uji ekspor CSV pada modul sederhana (Pegawai), relasional (Anggota/Komisi), bernilai angka (Program/Anggaran), dan dokumen (Arsip).'},
+    {id:'pdf-representatif',text:'Uji cetak/PDF pada tabel lebar (Anggota/Komisi) dan dokumen (Arsip/Ranperda); kolom tidak terpotong dan data tetap terbaca.'},
+    {id:'lampiran-bersama',text:'Uji komponen lampiran bersama pada satu record uji Arsip: unggah, daftar, buka tautan sementara, hapus berkas uji, dan cek record sumber tetap ada.'},
+    {id:'hak-hapus',text:'Uji hak hapus pada lingkungan/data uji: admin diizinkan sesuai aturan, peran yang tidak berwenang ditolak, relasi induk terlindungi.'},
+    {id:'riwayat-versi',text:'Buat sesi baru pada versi aplikasi aktif; baseline jumlah skenario tidak berubah pada sesi versi lama dan hasil lama tetap menjadi riwayat baca-saja.'}
+  ]},
+  pengguna:{label:'Pengguna & Hak Akses',tests:[
+    {id:'admin',text:'Hanya admin yang bisa mengelola pengguna; pengelola/pimpinan tidak memperoleh tombol aksi yang tidak berwenang.'},
+    {id:'unit',text:'Akun pengelola tanpa unit atau profil/peran yang valid ditolak dengan pesan yang jelas.'}
+  ]},
+  evidence:{label:'Evidence Center',tests:[
+    {id:'dokumen',text:'Record bukti benar-benar terhubung ke dokumen atau sumber evidence yang dapat dibuka.'},
+    {id:'relasi',text:'Rantai Evidence → Indikator → Sasaran → Renstra berasal dari relasi data yang valid; placeholder ditandai sebagai belum tersedia.'}
+  ]},
+  'an-sakip':{label:'Dashboard SAKIP',tests:[
+    {id:'rumus',text:'Capaian indikator ditampilkan dengan formula yang tepat serta satuan/target yang sesuai.'},
+    {id:'nol',text:'Target nol atau kosong ditangani tanpa menghasilkan NaN/Infinity; tampilkan N/A atau penjelasan yang jelas.'}
+  ]},
+  'an-keu':{label:'Dashboard Keuangan',tests:[{id:'pagu-nol',text:'Pagu nol/kosong tidak menyebabkan pembagian tak terdefinisi dan angka realisasi sesuai sumber Anggaran.'}]},
+  'an-legis':{label:'Dashboard Legislasi',tests:[{id:'sumber',text:'Persentase Propemperda, Ranperda, dan Harmonisasi dihitung dari record/status aktual serta menangani tabel kosong.'}]},
+  'an-awas':{label:'Dashboard Pengawasan',tests:[{id:'sumber',text:'Temuan, Rekomendasi, dan Tindak Lanjut dihitung dari status record aktual, bukan angka manual.'}]},
+  'an-aspirasi':{label:'Dashboard Aspirasi',tests:[{id:'sumber',text:'Reses, Pokir, dan Pengaduan dihitung berdasarkan definisi status yang benar dan data sumber.'}]},
+  'an-puas':{label:'Dashboard Kepuasan DPRD',tests:[{id:'definisi',text:'Pastikan nilai kepuasan bersumber dari survei kepuasan yang terukur, bukan sekadar persentase Pengaduan/Audiensi/Hearing selesai.'}]}
+};
+// Uji fitur bersama dipusatkan pada skenario representatif; skenario per modul
+// tetap menguji CRUD, pencarian, filter dan relasi yang benar-benar dikonfigurasi.
+const UJI_LAMPIRAN_MODULES=new Set(['persuratan','arsip','risalah','notulen','keputusan','perjanjian','ranperda','naskahakademik','jdih','spj','lapsemester','pertanggungjawaban','lkpj','dokumentasi','berita','publikasi','evaluasi','temuan','rekomendasi','tindaklanjut','renstra','renja','rencanaaksi']);
+const UJI_CSV_MODULES=new Set(['pegawai','anggota','komisi','fraksi','program','arsip','renstra','iku','anggaran','temuan']);
+const UJI_PDF_MODULES=new Set(['anggota','komisi','fraksi','arsip','ranperda','program','anggaran']);
 function skenarioUji(t){
   const cols=FIELDS[t]||STD, st=cols.find(c=>c[0]==='status'), rel=cols.filter(c=>c[2]==='rel');
   const list=[
-    `Buka menu "${LABEL[t]}": tabel dan kartu statistik tampil`,
-    `Klik "+ Tambah", isi kolom wajib, lalu Simpan: record baru muncul di tabel`,
-    `Ubah satu record, lalu Simpan: perubahan tampil di tabel`,
-    `Cari dengan salah satu kata dari record: hasil sesuai`,
+    {id:'buka-menu',jenis:'Umum',text:`Buka menu "${LABEL[t]}": tabel dan kartu statistik tampil tanpa error.`},
+    {id:'tambah-simpan',jenis:'Umum',text:'Tambah satu record uji dengan data yang sesuai aturan; setelah Simpan, record tampil satu kali.'},
+    {id:'ubah-simpan',jenis:'Umum',text:'Ubah satu field yang aman pada record uji; perubahan terlihat setelah disimpan dan dimuat ulang.'},
+    {id:'pencarian',jenis:'Umum',text:'Cari menggunakan sebagian nama/kode; hasil sesuai dan tidak menampilkan record yang tidak cocok.'}
   ];
-  if(st)list.push(`Filter status "${st[3][0]}": hanya record dengan status itu yang tampil`);
-  rel.forEach(c=>list.push(`Kolom "${c[1]}": pilihan berasal dari ${LABEL[c[3]]} dan namanya tampil di tabel`));
-  list.push(`Klik "Periksa data": hasil sesuai isi tabel`);
-  list.push(`Unduh "Excel (CSV)": berkas terbuka di Excel/Numbers dengan huruf benar`);
-  list.push(`Klik "PDF": pratinjau cetak memuat seluruh baris`);
-  list.push(`Lampiran: simpan record, unggah berkas, buka, lalu hapus berkas`);
-  list.push(`Hapus satu record (admin): konfirmasi muncul dan record hilang`);
+  if(st)list.push({id:'filter-status',jenis:'Umum',text:'Filter status: hanya record dengan status yang dipilih yang tampil; termasuk pilihan status lain yang tersedia.'});
+  rel.forEach(c=>list.push({id:'rel-'+c[0],jenis:'Relasi',text:`Relasi "${c[1]}": pilihan berasal dari ${LABEL[c[3]]||c[3]} dan record tersimpan menampilkan referensi yang benar.`}));
+  list.push({id:'periksa-data',jenis:'Integritas',text:'Jalankan Periksa data; temuan menunjuk ke record/kolom yang benar dan field opsional kosong tidak dianggap sebagai kesalahan.'});
+  if(UJI_CSV_MODULES.has(t))list.push({id:'ekspor-csv',jenis:'Fitur bersama',text:'Ekspor CSV pada modul perwakilan ini: nama kolom, karakter Indonesia, relasi/angka dan jumlah baris sesuai data.'});
+  if(UJI_PDF_MODULES.has(t))list.push({id:'cetak-pdf',jenis:'Fitur bersama',text:'Pratinjau cetak/PDF pada modul perwakilan ini: kolom dan baris relevan tidak terpotong secara material.'});
+  if(UJI_LAMPIRAN_MODULES.has(t))list.push({id:'lampiran',jenis:'Bukti',text:'Lampiran pada record yang relevan: daftar, unggah, buka, dan hapus berkas uji sesuai hak akses; jangan gunakan berkas/data sensitif.'});
+  (UJI_KHUSUS[t]||[]).forEach(x=>list.push({...x,jenis:'Khusus'}));
   return list;
 }
-function renderUji(){
-  const groups=MENU.map((g,gi)=>({g:g.g,items:g.items.map(([id])=>id).filter(isDataMod)})).filter(x=>x.items.length);
-  const total=groups.reduce((a,g)=>a+g.items.reduce((b,t)=>b+skenarioUji(t).length,0),0);
-  $('#view').innerHTML=`<div class="row"><div><h1>Daftar Uji Manual</h1><div class="sub">Centang setiap skenario saat menguji di perangkat Anda. Centang tersimpan selama halaman terbuka.</div></div>
-    <div class="actions noprint"><button id="ujiCsv">⬇ Unduh hasil (CSV)</button></div></div>
-    <div class="card"><b id="ujiProg"></b><div class="bar" style="margin-top:8px"><i id="ujiBar" style="width:0%"></i></div></div>
-    <div id="ujiBox" style="display:grid;gap:12px">${groups.map(g=>`<details class="card"><summary style="cursor:pointer;font-weight:700">${esc(g.g)} <span class="sub">· ${g.items.length} modul</span></summary>
-      ${g.items.map(t=>`<div style="margin-top:12px"><b>${esc(LABEL[t])}</b>${skenarioUji(t).map((s,i)=>{const k=t+'|'+i;return `<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px"><input type="checkbox" data-k="${esc(k)}" ${UJI[k]?'checked':''} style="width:auto;margin-top:3px"><span>${esc(s)}</span></label>`}).join('')}</div>`).join('')}
-    </details>`).join('')}</div>`;
-  const prog=()=>{ const done=Object.values(UJI).filter(Boolean).length; $('#ujiProg').textContent=`${done} dari ${total} skenario lulus`; $('#ujiBar').style.width=(total?done/total*100:0)+'%'; };
-  prog();
-  $('#ujiBox').onchange=e=>{ const k=e.target.dataset&&e.target.dataset.k; if(k){ UJI[k]=e.target.checked; prog(); } };
-  $('#ujiCsv').onclick=()=>{
-    const e=v=>'"'+String(v).replace(/"/g,'""')+'"';
-    const rows=[];
-    groups.forEach(g=>g.items.forEach(t=>skenarioUji(t).forEach((s,i)=>rows.push([g.g,LABEL[t],s,UJI[t+'|'+i]?'Lulus':'Belum diuji'].map(e).join(',')))));
-    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\uFEFF'+['Grup,Modul,Skenario,Hasil',...rows].join('\r\n')],{type:'text/csv;charset=utf-8'}));
-    a.download=`ARKA_daftar_uji_${today()}.csv`; a.click();
+
+function ujiKey(scope,id){return scope+'::'+id;}
+function ujiGet(key){return ujiNormaliseResult(UJI_ACTIVE_RESULTS[key]||{});}
+function ujiScenarioMeta(scope,test){
+  const page=String(scope).startsWith('page:');
+  const moduleId=page?String(scope).slice(5):scope;
+  const group=page?'Dashboard dan halaman khusus':(MENU.find(g=>g.items.some(([id])=>id===moduleId))||{}).g||'Lainnya';
+  return {scope,moduleId,group,moduleLabel:page?(UJI_HALAMAN[moduleId]||{}).label||moduleId:(LABEL[moduleId]||moduleId),test};
+}
+function ujiExpectedResult(test){
+  if(test.expected||test.hasilHarapan)return String(test.expected||test.hasilHarapan);
+  if(test.id==='buka-menu')return 'Halaman terbuka tanpa error; tabel, statistik, dan aksi yang berwenang terlihat.';
+  if(test.id==='tambah-simpan')return 'Record uji berhasil disimpan satu kali, tampil pada tabel, dan tetap ada setelah data dimuat ulang.';
+  if(test.id==='ubah-simpan')return 'Perubahan tersimpan, tampil pada record yang benar, dan tetap ada setelah dimuat ulang.';
+  if(test.id==='pencarian')return 'Hasil hanya memuat record yang cocok dengan kata/kode yang dicari.';
+  if(test.id==='filter-status')return 'Semua baris yang tampil sesuai status terpilih; baris dengan status lain tidak tampil.';
+  if(String(test.id).startsWith('rel-'))return 'Pilihan berasal dari master terkait; record menyimpan referensi valid dan nama yang benar ditampilkan.';
+  if(test.id==='periksa-data')return 'Temuan sesuai kondisi data aktual; field opsional kosong tidak salah dianggap sebagai kesalahan.';
+  if(test.id==='ekspor-csv')return 'CSV dapat dibuka, karakter Indonesia benar, dan baris/kolom sesuai data yang diekspor.';
+  if(test.id==='cetak-pdf')return 'Pratinjau cetak memuat kolom dan baris relevan tanpa terpotong secara material.';
+  if(test.id==='lampiran')return 'Lampiran tampil dan bisa dibuka bagi pengguna yang berwenang; perubahan lampiran tercatat.';
+  if(test.id==='hapus-hak-akses')return 'Hanya record yang dipilih yang terhapus; penolakan hak akses dan relasi induk tetap benar.';
+  return 'Perilaku dalam skenario terpenuhi, hasil dapat ditelusuri, dan tidak ada data sumber/relasi lain yang berubah tanpa izin.';
+}
+function ujiDefaultRecord(test){return ujiNormaliseResult({hasilHarapan:ujiExpectedResult(test),status:'Belum diuji',versi:ARKA_APP_VERSION});}
+function ujiExpectedInput(scope,test,record){
+  const expected=record.hasilHarapan||ujiExpectedResult(test);
+  return `<div class="card" style="background:var(--bg);box-shadow:none;margin-top:8px;padding:10px 12px"><div class="hint">HASIL YANG DIHARAPKAN</div><div style="margin-top:4px;white-space:pre-wrap">${esc(expected)}</div></div>`;
+}
+function ujiDbRow(key,rec,sessionOverride=null){
+  const meta=UJI_SCENARIO_REGISTRY[key];
+  const session=sessionOverride||(UJI_ACTIVE_SESSION);
+  if(!meta||!session)return null;
+  return {
+    id:ujiStableResultId(session.id,key),sesi_id:session.id,scope_key:meta.scope,scenario_id:meta.test.id,
+    group_label:meta.group,module_label:meta.moduleLabel,scenario_type:meta.test.jenis||'Khusus',scenario_text:meta.test.text,
+    expected_result:rec.hasilHarapan||ujiExpectedResult(meta.test),actual_result:rec.hasilAktual||null,impact_level:rec.dampak==='Belum dinilai'?null:rec.dampak,
+    reproduction_steps:rec.reproduksi||null,status:rec.status,notes:rec.catatan||null,evidence_reference:rec.bukti||null,
+    tester_name:rec.penguji||null,tested_at:rec.waktuUji||null,app_version:rec.versi||ARKA_APP_VERSION,
+    followup_status:rec.statusPerbaikan||'Belum ditangani',followup_notes:rec.catatanPerbaikan||null,
+    changed_by:UJI_CURRENT_USER_ID,updated_at:rec.diubahPada||new Date().toISOString()
   };
 }
-
+async function ujiGetCurrentUserId(){
+  if(!UJI_IS_CLOUD||!sb)return null;
+  if(UJI_CURRENT_USER_ID)return UJI_CURRENT_USER_ID;
+  const {data,error}=await sb.auth.getUser(); if(error)throw error; UJI_CURRENT_USER_ID=data&&data.user?data.user.id:null; return UJI_CURRENT_USER_ID;
+}
+async function ujiCloudSaveResult(key,rec,sessionId=null){
+  const session=sessionId?(UJI_SESSIONS.find(s=>s.id===sessionId)||{id:sessionId}):UJI_ACTIVE_SESSION;
+  const row=ujiDbRow(key,rec,session);if(!row)throw new Error('Metadata skenario tidak tersedia. Buka kembali Daftar Uji dan coba lagi.');
+  row.changed_by=await ujiGetCurrentUserId();
+  const {error}=await sb.from('uji_hasil').upsert(row,{onConflict:'sesi_id,scope_key,scenario_id'});
+  if(error)throw error;
+  const ix=UJI_HISTORY_RESULT_ROWS.findIndex(r=>r.sesi_id===row.sesi_id&&r.scope_key===row.scope_key&&r.scenario_id===row.scenario_id);
+  if(ix>=0)UJI_HISTORY_RESULT_ROWS[ix]={...UJI_HISTORY_RESULT_ROWS[ix],...row};else UJI_HISTORY_RESULT_ROWS.push(row);
+}
+function ujiSaveLocalActive(){
+  if(UJI_IS_CLOUD){
+    try{localStorage.setItem(UJI_CLOUD_BACKUP_KEY,JSON.stringify({sessionId:UJI_ACTIVE_SESSION&&UJI_ACTIVE_SESSION.id,sessionName:UJI_ACTIVE_SESSION&&UJI_ACTIVE_SESSION.nama,versi:ARKA_APP_VERSION,backupAt:new Date().toISOString(),hasil:UJI_ACTIVE_RESULTS}));}catch(_){ }
+  }else ujiSaveLocalSessions();
+}
+async function ujiSave(key,field,value){
+  if(!ujiSessionEditable()){toast('Pilih atau buat sesi uji berstatus Berjalan. Sesi selesai dan peran hanya-baca tidak dapat diubah.');return false;}
+  const rec={...ujiGet(key)};
+  if(field==='status'){
+    if(!UJI_STATUSES.includes(value))return false;
+    if(value==='Tidak Berlaku'&&!String(rec.catatan||'').trim()){
+      const reason=prompt('Tuliskan alasan mengapa skenario ini tidak berlaku:','');
+      if(reason===null||!String(reason).trim()){
+        const control=$$('[data-uji-key][data-uji-field="status"]').find(n=>n.dataset.ujiKey===key);
+        if(control)control.value=rec.status;
+        toast('Alasan wajib diisi sebelum memilih Tidak Berlaku.');return false;
+      }
+      rec.catatan=String(reason).trim();
+      const note=$$('[data-uji-key][data-uji-field="catatan"]').find(n=>n.dataset.ujiKey===key);if(note)note.value=rec.catatan;
+    }
+    rec.status=value;rec.waktuUji=value==='Belum diuji'?null:new Date().toISOString();
+    rec.penguji=value==='Belum diuji'?'':(ARKA_NAMA||'Penguji lokal');rec.versi=ARKA_APP_VERSION;
+    if(value==='Belum diuji')rec.statusPerbaikan='Belum ditangani';
+  }else if(field==='catatan')rec.catatan=String(value||'');
+  else if(field==='bukti')rec.bukti=String(value||'');
+  else if(field==='hasilAktual')rec.hasilAktual=String(value||'');
+  else if(field==='dampak'&&UJI_IMPACTS.includes(value))rec.dampak=value;
+  else if(field==='reproduksi')rec.reproduksi=String(value||'');
+  else if(field==='statusPerbaikan'&&UJI_FOLLOWUP.includes(value)){
+    if(value==='Selesai'&&rec.status==='Gagal'&&!String(rec.catatanPerbaikan||'').trim()){
+      const verification=prompt('Sebelum menutup kegagalan, tuliskan ringkasan perbaikan dan hasil verifikasi ulang:','');
+      if(verification===null||!String(verification).trim()){
+        const control=$$('[data-uji-key][data-uji-field="statusPerbaikan"]').find(n=>n.dataset.ujiKey===key);
+        if(control)control.value=rec.statusPerbaikan;
+        toast('Catatan perbaikan/verifikasi ulang wajib diisi sebelum kegagalan dinyatakan selesai.');return false;
+      }
+      rec.catatanPerbaikan=String(verification).trim();
+      const note=$$('[data-uji-key][data-uji-field="catatanPerbaikan"]').find(n=>n.dataset.ujiKey===key);if(note)note.value=rec.catatanPerbaikan;
+    }
+    rec.statusPerbaikan=value;
+  }
+  else if(field==='catatanPerbaikan')rec.catatanPerbaikan=String(value||'');
+  rec.diubahPada=new Date().toISOString();if(!rec.hasilHarapan){const meta=UJI_SCENARIO_REGISTRY[key];if(meta)rec.hasilHarapan=ujiExpectedResult(meta.test);}
+  UJI_ACTIVE_RESULTS[key]=rec;
+  if(!UJI_IS_CLOUD&&UJI_ACTIVE_SESSION)UJI_ACTIVE_SESSION.hasil=UJI_ACTIVE_RESULTS;
+  ujiSaveLocalActive();
+  if(UJI_IS_CLOUD){
+    const pendingKey=ujiPendingKey(UJI_ACTIVE_SESSION.id,key);
+    try{await ujiCloudSaveResult(key,rec,UJI_ACTIVE_SESSION.id);delete UJI_PENDING_SYNC[pendingKey];ujiSavePendingQueue();}
+    catch(e){UJI_PENDING_SYNC[pendingKey]={key,rec,sessionId:UJI_ACTIVE_SESSION.id,pendingKey};ujiSavePendingQueue();UJI_NOTICE='Ada hasil yang belum tersinkron ke Supabase: '+ujiSafeErr(e);toast('Hasil tersimpan sebagai cadangan lokal, tetapi gagal sinkron ke cloud. Gunakan Coba sinkron ulang.');}
+  }
+  ujiRenderPanelNotice();ujiRenderMetrics();ujiRenderHistory();ujiUpdateMeta(key);
+  return true;
+}
+function ujiUpdateMeta(key){
+  const rec=ujiGet(key);const meta=$$('[data-uji-meta]').find(n=>n.dataset.ujiMeta===key);const updated=$$('[data-uji-updated]').find(n=>n.dataset.ujiUpdated===key);
+  if(meta)meta.textContent=`Versi ${rec.versi||ARKA_APP_VERSION} · Penguji: ${rec.penguji||'—'} · Waktu uji: ${ujiTime(rec.waktuUji)}`;
+  if(updated)updated.textContent=`Terakhir diperbarui: ${ujiTime(rec.diubahPada)} · Versi hasil: ${rec.versi||ARKA_APP_VERSION}`;
+}
+async function ujiRetryPendingSync(){
+  if(!UJI_IS_CLOUD||!CLOUD){toast('Mode cloud belum siap. Perbaiki koneksi/migrasi lalu muat ulang Daftar Uji sebelum mencoba sinkron ulang.');return;}
+  const items=Object.values(UJI_PENDING_SYNC);if(!items.length){toast('Tidak ada hasil yang menunggu sinkronisasi.');return;}
+  let ok=0,fail=0;
+  for(const p of items){const pendingKey=p.pendingKey||ujiPendingKey(p.sessionId,p.key);try{await ujiCloudSaveResult(p.key,p.rec,p.sessionId);delete UJI_PENDING_SYNC[pendingKey];ok++;}catch(_){fail++;}}
+  ujiSavePendingQueue();
+  UJI_NOTICE=fail?'Sebagian hasil belum tersinkron ('+fail+').':'Semua hasil tertunda berhasil disinkronkan.';
+  toast(UJI_NOTICE);ujiRenderPanelNotice();ujiRenderMetrics();ujiRenderHistory();
+}
+async function ujiCreateSessionRecord(name,silent=false){
+  if(!ujiCanEdit())throw new Error('Peran saat ini hanya dapat membaca hasil uji.');
+  const now=new Date().toISOString();
+  if(UJI_IS_CLOUD){
+    const createdBy=await ujiGetCurrentUserId();if(!createdBy)throw new Error('Sesi autentikasi tidak ditemukan.');
+    const payload={id:uid(),nama:String(name||ujiNewSessionName()),app_version:ARKA_APP_VERSION,scenario_total:UJI_RENDERED_MODEL.total||0,source_mode:'Cloud',status:'Berjalan',notes:null,started_at:now,finished_at:null,created_by:createdBy,created_by_name:ARKA_NAMA||'Penguji'};
+    const {data,error}=await sb.from('uji_sesi').insert(payload).select('*').single();if(error)throw error;
+    const s=ujiNormaliseSession(data);s.hasil={};UJI_SESSIONS.unshift(s);UJI_ACTIVE_SESSION=s;UJI_ACTIVE_RESULTS={};UJI_ACTIVE_EVIDENCE={};
+  }else{
+    const s=ujiNormaliseSession({id:uid(),nama:String(name||ujiNewSessionName()),versi_aplikasi:ARKA_APP_VERSION,mode_sumber:'Lokal',status:'Berjalan',mulai_pada:now,dibuat_oleh_nama:ARKA_NAMA||'Penguji lokal',hasil:{}});
+    UJI_SESSIONS.unshift(s);UJI_ACTIVE_SESSION=s;UJI_ACTIVE_RESULTS=s.hasil;UJI_ACTIVE_EVIDENCE={};ujiSaveLocalSessions();
+  }
+  try{localStorage.setItem(UJI_ACTIVE_SESSION_KEY,UJI_ACTIVE_SESSION.id);}catch(_){ }
+  if(!silent)toast('Sesi uji baru dibuat.');
+  return UJI_ACTIVE_SESSION;
+}
+async function ujiFinishSession(){
+  if(!UJI_ACTIVE_SESSION||!ujiCanFinishSession()){toast('Hanya admin atau pembuat sesi yang dapat mengakhiri sesi cloud.');return;}
+  if(!confirm('Akhiri sesi ini? Sesi yang selesai menjadi hanya-baca; buat sesi baru untuk pengujian berikutnya.'))return;
+  const now=new Date().toISOString();
+  if(UJI_IS_CLOUD){const {error}=await sb.from('uji_sesi').update({status:'Selesai',finished_at:now,updated_at:now}).eq('id',UJI_ACTIVE_SESSION.id);if(error){toast('Gagal mengakhiri sesi: '+ujiSafeErr(error));return;}}
+  UJI_ACTIVE_SESSION.status='Selesai';UJI_ACTIVE_SESSION.selesai_pada=now;
+  if(UJI_IS_CLOUD){try{const {data,error}=await sb.from('uji_sesi').select('*').order('started_at',{ascending:false}).limit(25);if(!error)UJI_SESSIONS=data.map(ujiNormaliseSession);}catch(_){ }}else ujiSaveLocalSessions();
+  renderUjiPanel();
+}
+async function ujiCreateSessionFromButton(){
+  const name=prompt('Nama sesi pengujian:',ujiNewSessionName());if(name===null)return;
+  if(!String(name).trim()){toast('Nama sesi harus diisi.');return;}
+  try{await ujiCreateSessionRecord(String(name).trim());await ujiLoadCurrentSessionData();await ujiRefreshHistoryResults();renderUjiPanel();}
+  catch(e){toast('Gagal membuat sesi: '+ujiSafeErr(e));}
+}
+async function ujiLoadCurrentSessionData(){
+  UJI_ACTIVE_RESULTS={};UJI_ACTIVE_EVIDENCE={};
+  if(!UJI_ACTIVE_SESSION)return;
+  if(UJI_IS_CLOUD){
+    const {data,error}=await sb.from('uji_hasil').select('*').eq('sesi_id',UJI_ACTIVE_SESSION.id);
+    if(error)throw error;
+    for(const row of data||[]){
+      const key=ujiKey(row.scope_key,row.scenario_id);
+      UJI_ACTIVE_RESULTS[key]=ujiNormaliseResult({status:row.status,catatan:row.notes,bukti:row.evidence_reference,penguji:row.tester_name,waktuUji:row.tested_at,diubahPada:row.updated_at,versi:row.app_version,hasilAktual:row.actual_result,dampak:row.impact_level,reproduksi:row.reproduction_steps,hasilHarapan:row.expected_result,statusPerbaikan:row.followup_status,catatanPerbaikan:row.followup_notes});
+    }
+    const {data:ev,error:e2}=await sb.from('uji_bukti').select('*').eq('sesi_id',UJI_ACTIVE_SESSION.id).order('created_at',{ascending:false});
+    if(e2)throw e2;
+    for(const row of ev||[]){const key=ujiKey(row.scope_key,row.scenario_id);(UJI_ACTIVE_EVIDENCE[key]=UJI_ACTIVE_EVIDENCE[key]||[]).push(row);}
+  }else{
+    UJI_ACTIVE_RESULTS=UJI_ACTIVE_SESSION.hasil&&typeof UJI_ACTIVE_SESSION.hasil==='object'?UJI_ACTIVE_SESSION.hasil:{};
+    UJI_ACTIVE_SESSION.hasil=UJI_ACTIVE_RESULTS;
+    UJI_ACTIVE_EVIDENCE=UJI_ACTIVE_SESSION.bukti&&typeof UJI_ACTIVE_SESSION.bukti==='object'?UJI_ACTIVE_SESSION.bukti:{};
+  }
+}
+async function ujiRefreshHistoryResults(){
+  if(UJI_IS_CLOUD){
+    const ids=UJI_SESSIONS.slice(0,25).map(s=>s.id);UJI_HISTORY_RESULT_ROWS=[];
+    if(!ids.length)return;
+    const {data,error}=await sb.from('uji_hasil').select('id,sesi_id,scope_key,scenario_id,status,followup_status,app_version,tested_at').in('sesi_id',ids);
+    if(error){UJI_NOTICE='Sesi tersedia, tetapi riwayat hasil tidak dapat dibaca: '+ujiSafeErr(error);return;}
+    UJI_HISTORY_RESULT_ROWS=data||[];
+  }else{
+    UJI_HISTORY_RESULT_ROWS=[];
+    for(const s of UJI_SESSIONS){for(const [key,r0] of Object.entries(s.hasil||{})){const parts=key.split('::');UJI_HISTORY_RESULT_ROWS.push({sesi_id:s.id,scope_key:parts.slice(0,-1).join('::'),scenario_id:parts.at(-1),status:r0.status,followup_status:r0.statusPerbaikan||'Belum ditangani',app_version:r0.versi||s.versi_aplikasi,tested_at:r0.waktuUji});}}
+  }
+}
+function ujiCurrentSummary(){
+  const rows=(UJI_RENDERED_MODEL.allKeys||[]).map(ujiGet);const lulus=rows.filter(r=>r.status==='Lulus').length,gagal=rows.filter(r=>r.status==='Gagal').length,na=rows.filter(r=>r.status==='Tidak Berlaku').length;
+  const done=lulus+gagal+na;return {total:UJI_RENDERED_MODEL.total||0,done,lulus,gagal,na,belum:Math.max(0,(UJI_RENDERED_MODEL.total||0)-done),rate:(lulus+gagal)?Math.round(lulus/(lulus+gagal)*100):null,open:rows.filter(r=>r.status==='Gagal'&&r.statusPerbaikan!=='Selesai').length};
+}
+function ujiSummaryForSession(session){
+  const rows=UJI_HISTORY_RESULT_ROWS.filter(r=>r.sesi_id===session.id);
+  const lulus=rows.filter(r=>r.status==='Lulus').length,gagal=rows.filter(r=>r.status==='Gagal').length,na=rows.filter(r=>r.status==='Tidak Berlaku').length;
+  const done=lulus+gagal+na,open=rows.filter(r=>r.status==='Gagal'&&r.followup_status!=='Selesai').length;
+  // If a legacy session predates scenario counts, only infer a denominator when its app version matches this exact scenario catalog.
+  const total=Number(session.jumlah_skenario)|| (session.versi_aplikasi===ARKA_APP_VERSION?UJI_RENDERED_MODEL.total:0);
+  return {done,total,coverage:total?Math.round(done/total*100):null,lulus,gagal,na,open,rate:(lulus+gagal)?Math.round(lulus/(lulus+gagal)*100):null};
+}
+function ujiOpenFailuresRecent(){
+  if(UJI_IS_CLOUD)return UJI_HISTORY_RESULT_ROWS.filter(r=>r.status==='Gagal'&&r.followup_status!=='Selesai').length;
+  return UJI_SESSIONS.slice(0,25).reduce((sum,s)=>sum+Object.values(s.hasil||{}).filter(r=>r.status==='Gagal'&&(r.statusPerbaikan||'Belum ditangani')!=='Selesai').length,0);
+}
+function ujiRenderMetrics(){
+  const box=$('#ujiMetrics');if(!box)return;
+  const m=ujiCurrentSummary(), openRecent=ujiOpenFailuresRecent();
+  box.innerHTML=`<div class="kpis" style="margin-bottom:0">
+    <div class="card"><div class="kpi"><div class="t">Skenario sudah dinilai</div><div class="n">${m.done} / ${m.total}</div><div class="d">${m.belum} belum diuji</div></div></div>
+    <div class="card"><div class="kpi"><div class="t">Tingkat lulus</div><div class="n">${m.rate===null?'—':m.rate+'%'}</div><div class="d">Lulus dibanding Lulus + Gagal; N/A terpisah</div></div></div>
+    <div class="card"><div class="kpi"><div class="t">Gagal pada sesi</div><div class="n">${m.gagal}</div><div class="d">${m.open} belum selesai diverifikasi</div></div></div>
+    <div class="card"><div class="kpi"><div class="t">Gagal terbuka · riwayat terbaru</div><div class="n">${openRecent}</div><div class="d">Belum berstatus Selesai</div></div></div>
+    <div class="card"><div class="kpi"><div class="t">Tidak berlaku</div><div class="n">${m.na}</div><div class="d">Alasan dicatat pada catatan penguji</div></div></div>
+  </div>
+  <div style="margin-top:12px"><div class="row"><b>Progres pengujian sesi</b><span class="sub">${m.total?Math.round(m.done/m.total*100):0}% dinilai</span></div><div class="bar" style="margin-top:7px"><i style="width:${m.total?m.done/m.total*100:0}%"></i></div></div>`;
+}
+function ujiRenderHistory(){
+  const body=$('#ujiHistoryBody');if(!body)return;
+  const list=UJI_SESSIONS.slice(0,12);
+  if(!list.length){body.innerHTML='<tr><td colspan="8" class="empty">Belum ada sesi uji.</td></tr>';return;}
+  body.innerHTML=list.map(s=>{const m=ujiSummaryForSession(s);return `<tr><td>${esc(s.nama)}</td><td>${esc(s.versi_aplikasi)}</td><td>${esc(ujiTime(s.mulai_pada))}</td><td>${esc(s.status)}</td><td>${m.done} / ${m.total||'—'}</td><td>${m.rate===null?'—':m.rate+'%'}</td><td>${m.gagal} (${m.open} terbuka)</td><td><button type="button" data-uji-open-session="${esc(s.id)}">Buka</button></td></tr>`}).join('');
+}
+function ujiRenderPanelNotice(){
+  const box=$('#ujiNotice');if(!box)return;
+  const parts=[];
+  if(UJI_NOTICE)parts.push(`<div class="card" style="border-color:var(--warn);margin:0"><b>Perhatian</b><div class="sub" style="margin-top:4px">${esc(UJI_NOTICE)}</div>${Object.keys(UJI_PENDING_SYNC).length&&UJI_IS_CLOUD?'<button type="button" id="ujiRetrySync" style="margin-top:8px">Coba sinkron ulang</button>':''}</div>`);
+  if(!UJI_ACTIVE_SESSION)parts.push('<div class="card" style="margin:0"><b>Belum ada sesi pengujian.</b><div class="sub">Mulai sesi baru atau pilih sesi yang sudah ada untuk mencatat hasil.</div></div>');
+  else if(UJI_ACTIVE_SESSION.versi_aplikasi!==ARKA_APP_VERSION)parts.push(`<div class="card" style="margin:0;border-color:var(--warn)"><b>Sesi memakai katalog versi ${esc(UJI_ACTIVE_SESSION.versi_aplikasi)} — hanya-baca.</b><div class="sub">Katalog sekarang ARKA ${esc(ARKA_APP_VERSION)} berbeda. Sesi lama dipertahankan sebagai riwayat dan jumlah skenarionya tidak diubah; buat sesi baru untuk menjalankan katalog terbaru.</div></div>`);
+  else if(UJI_ACTIVE_SESSION.status==='Selesai')parts.push('<div class="card" style="margin:0"><b>Sesi sudah selesai — mode baca.</b><div class="sub">Untuk melanjutkan pengujian, buat sesi baru. Riwayat sesi ini tetap dapat ditinjau.</div></div>');
+  else if(!ujiCanEdit())parts.push('<div class="card" style="margin:0"><b>Akses hanya-baca.</b><div class="sub">Peran akun saat ini dapat meninjau hasil, tetapi tidak dapat mengubah sesi atau hasil uji.</div></div>');
+  box.innerHTML=parts.join('');
+  const retry=$('#ujiRetrySync');if(retry)retry.onclick=()=>ujiRetryPendingSync();
+}
+function ujiEvidenceHtml(key,editable){
+  const records=UJI_ACTIVE_EVIDENCE[key]||[];
+  const rows=records.map(e=>{const mayDelete=editable&&(ARKA_ROLE==='admin'||(UJI_CURRENT_USER_ID&&e.created_by===UJI_CURRENT_USER_ID));return `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px"><span>${esc(e.file_name||e.nama_file||'Bukti')} <span class="sub">· ${fmtSize(Number(e.file_size??e.ukuran)||0)}</span></span><span class="toolbar"><button type="button" data-uji-open-evidence="${esc(e.id)}">Buka</button>${mayDelete?`<button type="button" class="btn-d" data-uji-delete-evidence="${esc(e.id)}">Hapus</button>`:''}</span></div>`}).join('');
+  if(UJI_IS_CLOUD){return `<div style="margin-top:8px"><b>Bukti terlampir (${records.length})</b><div>${rows||'<div class="hint">Belum ada bukti berkas.</div>'}</div>${editable?`<label class="btn-p" style="display:inline-block;margin-top:8px;cursor:pointer">+ Unggah bukti<input type="file" data-uji-upload="${esc(key)}" accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx" hidden></label><div class="hint">Maksimum 10 MB per berkas. Berkas disimpan privat di bucket ARKA.</div>`:''}</div>`;}
+  return `<div style="margin-top:8px"><b>Bukti berkas</b><div class="hint">Unggah berkas memerlukan mode cloud dan migrasi SQL Daftar Uji. Dalam mode lokal, gunakan field referensi bukti di atas; referensi tidak menyimpan berkas itu sendiri.</div>${rows}</div>`;
+}
+function ujiEvidenceDomId(key){return 'uji-evidence-'+ujiStableResultId('dom',key);}
+function ujiCaseHtml(scope,test){
+  const key=ujiKey(scope,test.id),meta=ujiScenarioMeta(scope,test);UJI_SCENARIO_REGISTRY[key]=meta;
+  const rec={...ujiDefaultRecord(test),...ujiGet(key)};if(!rec.hasilHarapan)rec.hasilHarapan=ujiExpectedResult(test);
+  const editable=ujiSessionEditable();
+  const statusOptions=UJI_STATUSES.map(x=>`<option value="${esc(x)}" ${rec.status===x?'selected':''}>${esc(x)}</option>`).join('');
+  const impactOptions=UJI_IMPACTS.map(x=>`<option value="${esc(x)}" ${rec.dampak===x?'selected':''}>${esc(x)}</option>`).join('');
+  const followOptions=UJI_FOLLOWUP.map(x=>`<option value="${esc(x)}" ${rec.statusPerbaikan===x?'selected':''}>${esc(x)}</option>`).join('');
+  return `<div class="card" style="padding:12px 14px;box-shadow:none;margin-top:8px">
+    <div class="row" style="align-items:flex-start;gap:12px"><div style="flex:1;min-width:220px"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span class="pill">${esc(test.jenis||'Khusus')}</span><b>${esc(test.text)}</b></div><div class="hint" data-uji-meta="${esc(key)}" style="margin-top:5px">Versi ${esc(rec.versi||ARKA_APP_VERSION)} · Penguji: ${esc(rec.penguji||'—')} · Waktu uji: ${esc(ujiTime(rec.waktuUji))}</div></div>
+    <label style="width:180px;min-width:145px;font-size:12px;color:var(--muted)">Status hasil<select data-uji-key="${esc(key)}" data-uji-field="status" ${editable?'':'disabled'} style="margin-top:4px;width:100%">${statusOptions}</select></label></div>
+    ${ujiExpectedInput(scope,test,rec)}
+    <div class="form" style="margin-top:10px">
+      <label class="full">Hasil aktual<textarea rows="2" data-uji-key="${esc(key)}" data-uji-field="hasilAktual" ${editable?'':'disabled'} placeholder="Catat hasil yang benar-benar diamati saat pengujian…">${esc(rec.hasilAktual)}</textarea></label>
+      <label>Tingkat dampak<select data-uji-key="${esc(key)}" data-uji-field="dampak" ${editable?'':'disabled'}>${impactOptions}</select></label>
+      <label>Status perbaikan<select data-uji-key="${esc(key)}" data-uji-field="statusPerbaikan" ${editable?'':'disabled'}>${followOptions}</select></label>
+      <label class="full">Langkah reproduksi<textarea rows="2" data-uji-key="${esc(key)}" data-uji-field="reproduksi" ${editable?'':'disabled'} placeholder="Langkah 1, 2, 3 agar masalah dapat diulang…">${esc(rec.reproduksi)}</textarea></label>
+      <label class="full">Catatan penguji<textarea rows="2" data-uji-key="${esc(key)}" data-uji-field="catatan" ${editable?'':'disabled'} placeholder="Hasil aktual, alasan Tidak Berlaku, konteks, atau catatan tindak lanjut…">${esc(rec.catatan)}</textarea></label>
+      <label class="full">Catatan perbaikan / verifikasi ulang<textarea rows="2" data-uji-key="${esc(key)}" data-uji-field="catatanPerbaikan" ${editable?'':'disabled'} placeholder="Apa yang diperbaiki dan hasil verifikasi setelah perbaikan…">${esc(rec.catatanPerbaikan)}</textarea></label>
+      <label class="full">Referensi bukti<input type="text" data-uji-key="${esc(key)}" data-uji-field="bukti" ${editable?'':'disabled'} value="${esc(rec.bukti)}" placeholder="Tautan, nomor dokumen, ID record, atau nama berkas"/><span class="hint">Referensi tekstual dicatat bersama hasil. Unggah berkas terpisah pada bagian bukti di bawah.</span></label>
+    </div>
+    <div id="${ujiEvidenceDomId(key)}">${ujiEvidenceHtml(key,editable)}</div>
+    <div class="hint" data-uji-updated="${esc(key)}" style="margin-top:8px">Terakhir diperbarui: ${esc(ujiTime(rec.diubahPada))} · Versi hasil: ${esc(rec.versi||ARKA_APP_VERSION)}</div>
+  </div>`;
+}
+async function ujiInitPage(){
+  if(Object.keys(UJI_PENDING_SYNC).length&&!UJI_NOTICE)UJI_NOTICE=Object.keys(UJI_PENDING_SYNC).length+' hasil uji menunggu sinkronisasi cloud. Tekan Coba sinkron ulang setelah koneksi pulih.';
+  if(!Object.keys(UJI_PENDING_SYNC).length)UJI_NOTICE='';UJI_IS_CLOUD=false;
+  if(CLOUD&&ARKA_ROLE&&sb){
+    try{
+      const {data,error}=await sb.from('uji_sesi').select('*').order('started_at',{ascending:false}).limit(25);
+      if(error)throw error;
+      UJI_IS_CLOUD=true;UJI_CURRENT_USER_ID=await ujiGetCurrentUserId();UJI_SESSIONS=(data||[]).map(ujiNormaliseSession);
+      let storedId=null;try{storedId=localStorage.getItem(UJI_ACTIVE_SESSION_KEY);}catch(_){ }
+      const storedSession=UJI_SESSIONS.find(s=>s.id===storedId&&s.versi_aplikasi===ARKA_APP_VERSION);
+      UJI_ACTIVE_SESSION=storedSession||UJI_SESSIONS.find(s=>s.versi_aplikasi===ARKA_APP_VERSION&&s.status==='Berjalan')||UJI_SESSIONS.find(s=>s.versi_aplikasi===ARKA_APP_VERSION)||null;
+      if(!UJI_ACTIVE_SESSION&&ujiCanEdit())UJI_ACTIVE_SESSION=await ujiCreateSessionRecord(ujiNewSessionName(),true);
+      if(!UJI_ACTIVE_SESSION)UJI_ACTIVE_SESSION=UJI_SESSIONS.find(s=>s.status==='Berjalan')||UJI_SESSIONS[0]||null;
+      if(UJI_ACTIVE_SESSION){try{localStorage.setItem(UJI_ACTIVE_SESSION_KEY,UJI_ACTIVE_SESSION.id);}catch(_){ }await ujiLoadCurrentSessionData();}
+      await ujiRefreshHistoryResults();return;
+    }catch(e){
+      UJI_IS_CLOUD=false;UJI_NOTICE='Tabel Daftar Uji cloud belum tersedia atau tidak dapat dibaca ('+ujiSafeErr(e)+'). Data sesi dan hasil akan memakai browser lokal sampai migrasi SQL berhasil dijalankan.';
+    }
+  }
+  ujiLoadLocalSessions();
+  let storedId=null;try{storedId=localStorage.getItem(UJI_ACTIVE_SESSION_KEY);}catch(_){ }
+  const storedSessionLocal=UJI_SESSIONS.find(s=>s.id===storedId&&s.versi_aplikasi===ARKA_APP_VERSION);
+  UJI_ACTIVE_SESSION=storedSessionLocal||UJI_SESSIONS.find(s=>s.versi_aplikasi===ARKA_APP_VERSION&&s.status==='Berjalan')||UJI_SESSIONS.find(s=>s.versi_aplikasi===ARKA_APP_VERSION)||null;
+  if(!UJI_ACTIVE_SESSION&&ujiCanEdit())UJI_ACTIVE_SESSION=await ujiCreateSessionRecord(ujiNewSessionName(),true);
+  if(!UJI_ACTIVE_SESSION)UJI_ACTIVE_SESSION=UJI_SESSIONS.find(s=>s.status==='Berjalan')||UJI_SESSIONS[0]||null;
+  if(UJI_ACTIVE_SESSION){UJI_ACTIVE_RESULTS=UJI_ACTIVE_SESSION.hasil||{};UJI_ACTIVE_SESSION.hasil=UJI_ACTIVE_RESULTS;UJI_ACTIVE_EVIDENCE=UJI_ACTIVE_SESSION.bukti||{};try{localStorage.setItem(UJI_ACTIVE_SESSION_KEY,UJI_ACTIVE_SESSION.id);}catch(_){ }}
+  await ujiRefreshHistoryResults();
+}
+async function renderUji(){
+  $('#view').innerHTML='<div class="card"><b>Memuat Daftar Uji…</b><div class="sub" style="margin-top:4px">Menyiapkan sesi, hasil, dan riwayat.</div></div>';
+  try{await ujiInitPage();renderUjiPanel();}catch(e){$('#view').innerHTML='<div class="card"><b>Gagal memuat Daftar Uji</b><div class="sub" style="margin-top:6px">'+esc(ujiSafeErr(e))+'</div><button id="ujiReload" style="margin-top:10px">Coba lagi</button></div>';const b=$('#ujiReload');if(b)b.onclick=()=>renderUji();}
+}
+function ujiEnsureScenarioTotal(){
+  const session=UJI_ACTIVE_SESSION,total=UJI_RENDERED_MODEL.total||0;
+  if(!session||!total||session.versi_aplikasi!==ARKA_APP_VERSION||session.jumlah_skenario===total||session.status!=='Berjalan')return;
+  // Only update the cloud session if this account is allowed to update the session metadata.
+  if(UJI_IS_CLOUD&&!(ARKA_ROLE==='admin'||(UJI_CURRENT_USER_ID&&session.dibuat_oleh===UJI_CURRENT_USER_ID)))return;
+  session.jumlah_skenario=total;
+  if(!UJI_IS_CLOUD){ujiSaveLocalSessions();return;}
+  sb.from('uji_sesi').update({scenario_total:total,updated_at:new Date().toISOString()}).eq('id',session.id).then(({error})=>{
+    if(error){UJI_NOTICE='Jumlah skenario sesi belum tersimpan ke cloud: '+ujiSafeErr(error);ujiRenderPanelNotice();}
+  }).catch(e=>{UJI_NOTICE='Jumlah skenario sesi belum tersimpan ke cloud: '+ujiSafeErr(e);ujiRenderPanelNotice();});
+}
+function renderUjiPanel(){
+  const groups=MENU.map(g=>({g:g.g,items:g.items.map(([id])=>id).filter(isDataMod)})).filter(x=>x.items.length);
+  const pageItems=MENU.flatMap(g=>g.items.map(([id])=>id)).filter(id=>UJI_HALAMAN[id]).map(id=>({id,...UJI_HALAMAN[id]}));
+  const allKeys=[];groups.forEach(g=>g.items.forEach(t=>skenarioUji(t).forEach(test=>allKeys.push(ujiKey(t,test.id)))));pageItems.forEach(p=>p.tests.forEach(test=>allKeys.push(ujiKey('page:'+p.id,test.id))));
+  UJI_RENDERED_MODEL={allKeys,total:allKeys.length,groups,pageItems};UJI_SCENARIO_REGISTRY={};
+  ujiEnsureScenarioTotal();
+  const testsHtml=groups.map(g=>`<details class="card"><summary style="cursor:pointer;font-weight:700">${esc(g.g)} <span class="sub">· ${g.items.length} modul data</span></summary>${g.items.map(t=>{const tests=skenarioUji(t);return `<details style="margin-top:12px"><summary style="font-weight:650">${esc(LABEL[t])} <span class="sub">· ${tests.length} skenario, ${tests.filter(x=>x.jenis==='Khusus').length} uji khusus</span></summary>${tests.map(x=>ujiCaseHtml(t,x)).join('')}</details>`}).join('')}</details>`).join('');
+  const pagesHtml=pageItems.map(p=>`<details style="margin-top:12px"><summary style="font-weight:650">${esc(p.label)} <span class="sub">· ${p.tests.length} skenario</span></summary>${p.tests.map(x=>ujiCaseHtml('page:'+p.id,{...x,jenis:'Khusus'})).join('')}</details>`).join('');
+  const canEdit=ujiSessionEditable();
+  const sessionsOptions=UJI_SESSIONS.slice(0,30).map(s=>`<option value="${esc(s.id)}" ${UJI_ACTIVE_SESSION&&s.id===UJI_ACTIVE_SESSION.id?'selected':''}>${esc(s.nama)} · ${esc(s.status)} · ${esc(ujiTime(s.mulai_pada))}</option>`).join('');
+  $('#view').innerHTML=`<div class="row"><div><h1>Daftar Uji & Riwayat Kualitas</h1><div class="sub">ARKA ${esc(ARKA_APP_VERSION)} · Skenario dijalankan manual. Hasil dicatat per sesi, versi, penguji, dan bukti.</div></div><div class="actions noprint"><button id="ujiCsv">⬇ Ekspor hasil sesi (CSV)</button><button id="ujiHistoryCsv">⬇ Ekspor riwayat sesi (CSV)</button></div></div>
+    <div id="ujiNotice" style="display:grid;gap:8px;margin-top:12px"></div>
+    <div class="card" style="margin-bottom:0"><div class="row" style="align-items:flex-end;gap:12px;flex-wrap:wrap"><label style="flex:1;min-width:240px">Sesi pengujian<select id="ujiSessionSelect" style="margin-top:4px">${sessionsOptions||'<option value="">Belum ada sesi</option>'}</select></label><div class="actions">${ujiCanEdit()?'<button id="ujiNewSession" class="btn-p">+ Sesi Baru</button>':''}${ujiCanFinishSession()?'<button id="ujiFinishSession">Akhiri Sesi</button>':''}</div></div>
+    ${UJI_ACTIVE_SESSION?`<div class="hint" style="margin-top:8px">${esc(UJI_ACTIVE_SESSION.nama)} · dibuat oleh ${esc(UJI_ACTIVE_SESSION.dibuat_oleh_nama||'—')} · dimulai ${esc(ujiTime(UJI_ACTIVE_SESSION.mulai_pada))} · versi sesi ${esc(UJI_ACTIVE_SESSION.versi_aplikasi)} · mode ${esc(UJI_ACTIVE_SESSION.mode_sumber)}</div>`:'<div class="hint" style="margin-top:8px">Sesi belum tersedia. Hubungi admin untuk membuat sesi cloud pertama.</div>'}</div>
+    <div id="ujiMetrics" style="margin-top:12px"></div>
+    <div class="card" style="margin-top:12px"><div class="row"><div><b>Perbandingan sesi pengujian</b><div class="sub">Riwayat terbaru; tingkat lulus = Lulus ÷ (Lulus + Gagal), Tidak Berlaku dihitung terpisah.</div></div></div><div class="tbl" style="margin-top:10px"><table><thead><tr><th>Sesi</th><th>Versi</th><th>Mulai</th><th>Status sesi</th><th>Dinilai / total</th><th>Tingkat lulus</th><th>Gagal (terbuka)</th><th>Aksi</th></tr></thead><tbody id="ujiHistoryBody"></tbody></table></div></div>
+    <div class="hint" style="margin:8px 0">Status Gagal tidak dihitung sebagai Lulus. Gagal tetap dianggap terbuka sampai status perbaikannya diubah menjadi Selesai setelah verifikasi ulang. Bukti file cloud disimpan di bucket privat ARKA; mode lokal hanya mencatat referensi teks.</div>
+    <div id="ujiBox" style="display:grid;gap:12px;margin-top:12px">${testsHtml}<details class="card"><summary style="cursor:pointer;font-weight:700">Dashboard dan halaman khusus <span class="sub">· ${pageItems.length} halaman</span></summary>${pagesHtml}</details></div>`;
+  ujiRenderPanelNotice();ujiRenderMetrics();ujiRenderHistory();
+  const sessionSel=$('#ujiSessionSelect');if(sessionSel)sessionSel.onchange=async()=>{const id=sessionSel.value;UJI_ACTIVE_SESSION=UJI_SESSIONS.find(s=>s.id===id)||null;try{if(UJI_ACTIVE_SESSION){localStorage.setItem(UJI_ACTIVE_SESSION_KEY,UJI_ACTIVE_SESSION.id);}await ujiLoadCurrentSessionData();await ujiRefreshHistoryResults();renderUjiPanel();}catch(e){toast('Gagal membuka sesi: '+ujiSafeErr(e));}};
+  const newBtn=$('#ujiNewSession');if(newBtn)newBtn.onclick=()=>ujiCreateSessionFromButton();
+  const finishBtn=$('#ujiFinishSession');if(finishBtn)finishBtn.onclick=()=>ujiFinishSession();
+  const csvBtn=$('#ujiCsv');if(csvBtn)csvBtn.onclick=()=>ujiExportCurrentCsv();
+  const historyBtn=$('#ujiHistoryCsv');if(historyBtn)historyBtn.onclick=()=>ujiExportHistoryCsv();
+  const box=$('#ujiBox');if(box){
+    box.onchange=async e=>{
+      const target=e.target;
+      const uploadKey=target.dataset&&target.dataset.ujiUpload;
+      if(uploadKey){const file=target.files&&target.files[0];target.value='';if(file)await ujiUploadEvidence(uploadKey,file);return;}
+      const key=target.dataset&&target.dataset.ujiKey,field=target.dataset&&target.dataset.ujiField;
+      if(!key||!field)return;
+      await ujiSave(key,field,target.value);
+    };
+    box.onclick=async e=>{
+      const open=e.target.closest('[data-uji-open-evidence]');if(open){await ujiOpenEvidence(open.dataset.ujiOpenEvidence);return;}
+      const del=e.target.closest('[data-uji-delete-evidence]');if(del){await ujiDeleteEvidence(del.dataset.ujiDeleteEvidence);return;}
+    };
+  }
+  const hist=$('#ujiHistoryBody');if(hist)hist.onclick=async e=>{const b=e.target.closest('[data-uji-open-session]');if(!b)return;const id=b.dataset.ujiOpenSession;const s=UJI_SESSIONS.find(x=>x.id===id);if(!s)return;UJI_ACTIVE_SESSION=s;try{localStorage.setItem(UJI_ACTIVE_SESSION_KEY,id);}catch(_){ }try{await ujiLoadCurrentSessionData();renderUjiPanel();}catch(err){toast('Gagal membuka sesi: '+ujiSafeErr(err));}};
+}
+function ujiRenderPanelNotice(){
+  const box=$('#ujiNotice');if(!box)return;
+  const parts=[];
+  if(UJI_NOTICE)parts.push(`<div class="card" style="border-color:var(--warn);margin:0"><b>Perhatian</b><div class="sub" style="margin-top:4px">${esc(UJI_NOTICE)}</div>${Object.keys(UJI_PENDING_SYNC).length&&UJI_IS_CLOUD?'<button type="button" id="ujiRetrySync" style="margin-top:8px">Coba sinkron ulang</button>':''}</div>`);
+  if(!UJI_ACTIVE_SESSION)parts.push('<div class="card" style="margin:0"><b>Belum ada sesi pengujian.</b><div class="sub">Mulai sesi baru atau minta admin membuat sesi cloud pertama.</div></div>');
+  else if(UJI_ACTIVE_SESSION.status==='Selesai')parts.push('<div class="card" style="margin:0"><b>Sesi sudah selesai — mode baca.</b><div class="sub">Buat sesi baru untuk pengujian berikutnya. Riwayat sesi ini tetap dapat ditinjau.</div></div>');
+  else if(!ujiCanEdit())parts.push('<div class="card" style="margin:0"><b>Akses hanya-baca.</b><div class="sub">Peran akun saat ini dapat meninjau hasil, tetapi tidak dapat mengubah sesi atau hasil uji.</div></div>');
+  box.innerHTML=parts.join('');const retry=$('#ujiRetrySync');if(retry)retry.onclick=()=>ujiRetryPendingSync();
+}
+function ujiRenderEvidenceList(key){
+  const meta=UJI_SCENARIO_REGISTRY[key];if(!meta)return;
+  const box=$('#'+ujiEvidenceDomId(key));if(box)box.innerHTML=ujiEvidenceHtml(key,ujiSessionEditable());
+}
+async function ujiUploadEvidence(key,file){
+  if(!ujiSessionEditable()||!UJI_IS_CLOUD){toast('Unggah bukti memerlukan sesi cloud yang aktif dan izin tulis.');return;}
+  if(file.size>UJI_EVIDENCE_MAX){toast('Berkas melebihi batas 10 MB.');return;}
+  if(!file.name||/\0/.test(file.name)){toast('Nama berkas tidak valid.');return;}
+  const meta=UJI_SCENARIO_REGISTRY[key];if(!meta){toast('Skenario bukti tidak ditemukan. Buka kembali panel skenario.');return;}
+  try{
+    const rec=ujiGet(key);if(!rec.hasilHarapan)rec.hasilHarapan=ujiExpectedResult(meta.test);
+    await ujiCloudSaveResult(key,rec);
+    const resultId=ujiStableResultId(UJI_ACTIVE_SESSION.id,key), evidenceId=uid();
+    const clean=file.name.replace(/[^\w.\-() ]/g,'_').slice(0,120)||'bukti';
+    const path=`uji/${UJI_ACTIVE_SESSION.id}/${resultId}/${evidenceId}-${clean}`;
+    const {error:uploadError}=await sb.storage.from(UJI_EVIDENCE_BUCKET).upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});
+    if(uploadError)throw uploadError;
+    const userId=await ujiGetCurrentUserId();
+    const payload={id:evidenceId,sesi_id:UJI_ACTIVE_SESSION.id,hasil_id:resultId,scope_key:meta.scope,scenario_id:meta.test.id,file_name:file.name,storage_path:path,file_size:file.size,mime_type:file.type||null,notes:null,created_by:userId,created_by_name:ARKA_NAMA||'Penguji'};
+    const {data,error}=await sb.from('uji_bukti').insert(payload).select('*').single();
+    if(error){await sb.storage.from(UJI_EVIDENCE_BUCKET).remove([path]);throw error;}
+    (UJI_ACTIVE_EVIDENCE[key]=UJI_ACTIVE_EVIDENCE[key]||[]).unshift(data);ujiRenderEvidenceList(key);toast('Bukti berhasil diunggah dan ditautkan ke skenario.');
+  }catch(e){UJI_NOTICE='Bukti gagal diunggah/ditautkan: '+ujiSafeErr(e);ujiRenderPanelNotice();toast(UJI_NOTICE);}
+}
+async function ujiOpenEvidence(evidenceId){
+  const item=Object.values(UJI_ACTIVE_EVIDENCE).flat().find(x=>x.id===evidenceId);if(!item)return;
+  if(!UJI_IS_CLOUD){toast('Bukti berkas tersedia hanya pada sesi cloud.');return;}
+  try{
+    const {data,error}=await sb.storage.from(UJI_EVIDENCE_BUCKET).createSignedUrl(item.storage_path,300);
+    if(error)throw error;
+    const link=document.createElement('a');link.href=data.signedUrl;link.target='_blank';link.rel='noopener';link.click();
+  }catch(e){toast('Gagal membuka bukti: '+ujiSafeErr(e));}
+}
+async function ujiDeleteEvidence(evidenceId){
+  if(!ujiSessionEditable()||!UJI_IS_CLOUD)return;
+  const item=Object.values(UJI_ACTIVE_EVIDENCE).flat().find(x=>x.id===evidenceId);if(!item)return;
+  if(!confirm('Hapus bukti uji ini dari sesi? Hasil pengujian tetap disimpan.'))return;
+  try{
+    const {error}=await sb.storage.from(UJI_EVIDENCE_BUCKET).remove([item.storage_path]);if(error)throw error;
+    const {error:delError}=await sb.from('uji_bukti').delete().eq('id',item.id);if(delError)throw delError;
+    for(const [key,items] of Object.entries(UJI_ACTIVE_EVIDENCE)){UJI_ACTIVE_EVIDENCE[key]=items.filter(x=>x.id!==evidenceId);if(items.some(x=>x.id===evidenceId))ujiRenderEvidenceList(key);}
+    toast('Bukti dihapus. Hasil uji dan catatannya tetap ada.');
+  }catch(e){toast('Gagal menghapus bukti: '+ujiSafeErr(e));}
+}
+function ujiExportCurrentCsv(){
+  const e=v=>{let s=String(v??'');if(/^[=+@\t\r]/.test(s)||/^-[^0-9]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const rows=[];const session=UJI_ACTIVE_SESSION;
+  UJI_RENDERED_MODEL.groups.forEach(g=>g.items.forEach(t=>skenarioUji(t).forEach(test=>{const key=ujiKey(t,test.id),r=ujiGet(key),ev=(UJI_ACTIVE_EVIDENCE[key]||[]).map(x=>x.file_name||x.nama_file).join('; ');rows.push([session&&session.nama||'',g.g,LABEL[t],test.jenis,test.id,test.text,r.hasilHarapan||ujiExpectedResult(test),r.hasilAktual,r.dampak,r.reproduksi,r.status,r.statusPerbaikan,r.catatanPerbaikan,r.catatan,r.penguji,r.waktuUji,r.versi||ARKA_APP_VERSION,r.bukti,ev,r.diubahPada].map(e).join(','));})));
+  UJI_RENDERED_MODEL.pageItems.forEach(p=>p.tests.forEach(test=>{const scope='page:'+p.id,key=ujiKey(scope,test.id),r=ujiGet(key),ev=(UJI_ACTIVE_EVIDENCE[key]||[]).map(x=>x.file_name||x.nama_file).join('; ');rows.push([session&&session.nama||'','Dashboard dan halaman khusus',p.label,'Khusus',test.id,test.text,r.hasilHarapan||ujiExpectedResult(test),r.hasilAktual,r.dampak,r.reproduksi,r.status,r.statusPerbaikan,r.catatanPerbaikan,r.catatan,r.penguji,r.waktuUji,r.versi||ARKA_APP_VERSION,r.bukti,ev,r.diubahPada].map(e).join(','));}));
+  const heads='Sesi,Grup,Modul/Judul,Jenis,ID Skenario,Skenario,Hasil Diharapkan,Hasil Aktual,Dampak,Langkah Reproduksi,Hasil,Status Perbaikan,Catatan Perbaikan,Catatan Penguji,Penguji,Waktu Uji,Versi Aplikasi,Referensi Bukti,Berkas Bukti,Terakhir Diperbarui';
+  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob(['\uFEFF'+[heads,...rows].join('\r\n')],{type:'text/csv;charset=utf-8'}));link.download=`ARKA_hasil_uji_v${ARKA_APP_VERSION.replace(/[^0-9.]/g,'')}_${today()}.csv`;link.click();
+}
+function ujiExportHistoryCsv(){
+  const e=v=>{let s=String(v??'');if(/^[=+@\t\r]/.test(s)||/^-[^0-9]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};const rows=UJI_SESSIONS.map(s=>{const m=ujiSummaryForSession(s);return [s.id,s.nama,s.versi_aplikasi,s.mode_sumber,s.status,s.dibuat_oleh_nama,s.mulai_pada,s.selesai_pada,m.done,m.total||'',m.coverage===null?'':m.coverage+'%',m.lulus,m.gagal,m.na,m.rate===null?'':m.rate+'%',m.open,s.catatan].map(e).join(',')});
+  const heads='ID Sesi,Nama Sesi,Versi,Mode,Status Sesi,Dibuat Oleh,Mulai,Selesai,Dinilai,Total Skenario,Cakupan,Lulus,Gagal,Tidak Berlaku,Tingkat Lulus,Gagal Terbuka,Catatan Sesi';
+  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob(['\uFEFF'+[heads,...rows].join('\r\n')],{type:'text/csv;charset=utf-8'}));link.download=`ARKA_riwayat_uji_v${ARKA_APP_VERSION.replace(/[^0-9.]/g,'')}_${today()}.csv`;link.click();
+}
 /* ============ KONFIGURASI KONEKSI SUPABASE ============ */
 function openConfigDialog() {
   // Jika dibuka dari form login, sembunyikan login agar modal konfigurasi dapat digunakan.
