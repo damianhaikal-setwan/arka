@@ -202,6 +202,8 @@ function dbSave(t,row){
   row.diubah=today();
   const i=list.findIndex(r=>r.id===row.id);
   if(i>=0)list[i]=row; else list.push(row);
+  // Master/assignment changes can resolve legacy name-based links elsewhere in memory.
+  if(['anggota','komisi','fraksi'].includes(t))resolveRefs();
   logAudit(isNew?'TAMBAH':'UBAH',t,row);
   if(CLOUD)arkaWrite(t,row,isNew).catch(e=>{toast('Gagal menyimpan ke server: '+e.message);arkaLoad().then(()=>go())});
   return row;
@@ -703,8 +705,15 @@ function renderModule(id){
   if(S.mod!==id){S={q:'',st:'',mod:id}}
   const title=LABEL[id]||id;
   const hasStatus=cols.some(c=>c[0]==='status');
+  const moduleSubtitle = id==='anggota'
+    ? 'Sumber utama data anggota. Tetapkan Fraksi dan Komisi pada setiap record anggota.'
+    : id==='komisi'
+      ? 'Daftar anggota dan ketua komisi bersumber dari penempatan pada modul Anggota DPRD.'
+      : id==='fraksi'
+        ? 'Daftar anggota dan ketua fraksi bersumber dari penempatan pada modul Anggota DPRD.'
+        : 'Record Engine · CRUD, pencarian, filter, ekspor, audit trail';
   $('#view').innerHTML=`
-  <div class="row"><div><h1>${esc(title)}</h1><div class="sub">Record Engine · CRUD, pencarian, filter, ekspor, audit trail</div></div>
+  <div class="row"><div><h1>${esc(title)}</h1><div class="sub">${esc(moduleSubtitle)}</div></div>
   <div class="actions noprint">${canWrite(id)?'<button class="btn-p" id="btnAdd">+ Tambah</button>':''}</div></div>
   ${statHtml(id)}
   <div id="chkBox"></div>
@@ -717,7 +726,8 @@ function renderModule(id){
     </div>
     <div class="tbl" style="margin-top:12px" id="tbl"></div>
   </div>
-  <div class="card"><b>Relasi & Evidence</b><div class="sub">Setiap record dapat dihubungkan ke Evidence Center dan Renstra melalui kolom Tautan Dokumen.</div></div>`;
+  ${id==='komisi'||id==='fraksi'?'<div id="memberSourceBox"></div>':''}
+  <div class="card"><b>Relasi & Evidence</b><div class="sub">${id==='anggota'?'Penempatan Fraksi dan Komisi pada record anggota menjadi sumber daftar anggota dan jumlah anggota di modul terkait.':id==='komisi'||id==='fraksi'?'Daftar di bawah ini dihitung langsung dari record Anggota DPRD; ubah penempatan anggota melalui modul Anggota DPRD.':'Setiap record dapat dihubungkan ke Evidence Center dan Renstra melalui kolom Tautan Dokumen.'}</div></div>`;
   $('#fq').oninput=e=>{S.q=e.target.value;drawTable(id)};
   if(hasStatus)$('#fs').onchange=e=>{S.st=e.target.value;drawTable(id)};
   const ba=$('#btnAdd'); if(ba)ba.onclick=()=>openForm(id,null);
@@ -765,7 +775,12 @@ function renderTree(id){
 function setTree(o){$$('#tree details').forEach(d=>d.open=o)}
 function filtered(id){
   const cols=FIELDS[id]||STD, q=S.q.toLowerCase();
-  return dbAll(id).filter(r=>(!S.st||r.status===S.st)&&(!q||cols.some(([k])=>String(r[k]??'').toLowerCase().includes(q))));
+  return dbAll(id).filter(r=>(!S.st||r.status===S.st)&&(!q||cols.some(([k,,ty,opt])=>{
+    let value=r[k]??'';
+    if(ty==='rel'&&value){const target=dbAll(opt).find(x=>String(x.id)===String(value));if(target)value=[target.nama,target.kode].filter(Boolean).join(' ')}
+    if(ty==='hit')value=exportFieldValue(id,r,cols.find(c=>c[0]===k)||[k,'',ty,opt]);
+    return String(value).toLowerCase().includes(q);
+  })));
 }
 function drawTable(id){
   const cols=(FIELDS[id]||STD).slice(0,5);
@@ -774,35 +789,105 @@ function drawTable(id){
   ${rows.map((r,i)=>`<tr><td>${i+1}</td>${cols.map(c=>`<td>${cellVal(r,c)}</td>`).join('')}
   <td class="noprint actions">${canWrite(id)?`<button onclick="openForm('${id}','${r.id}')">Ubah</button>`:''} ${canDelete()?`<button class="btn-d" onclick="delRow('${id}','${r.id}')">Hapus</button>`:''}</td></tr>`).join('')}
   </tbody></table>`:`<div class="empty">Tidak ada data yang cocok.</div>`;
+  if(id==='komisi'||id==='fraksi')renderMemberSource(id);
   if(!window._sr)window._sr=0;
+}
+function renderMemberSource(id){
+  const box=$('#memberSourceBox');
+  if(!box)return;
+  const memberField=id==='komisi'?'komisi':'fraksi';
+  const groupLabel=id==='komisi'?'Komisi':'Fraksi';
+  const groups=filtered(id);
+  if(!groups.length){box.innerHTML='<div class="card"><b>Anggota bersumber dari Anggota DPRD</b><div class="empty">Tidak ada '+groupLabel.toLowerCase()+' yang cocok dengan pencarian/filter.</div></div>';return;}
+  box.innerHTML=`<div class="card"><div class="row"><div><b>Daftar Anggota per ${groupLabel}</b><div class="sub">Data di bawah dihitung dari kolom ${groupLabel} pada modul Anggota DPRD. Klik nama anggota untuk mengubah penempatannya.</div></div><span class="pill">${groups.length} ${groupLabel.toLowerCase()}</span></div>
+  ${groups.map(g=>{
+    const members=dbAll('anggota').filter(m=>String(m[memberField]||'')===String(g.id));
+    const active=members.filter(m=>m.status!=='Nonaktif').length;
+    const chair=dbAll('anggota').find(m=>String(m.id)===String(g.ketua))||null;
+    const chairAssigned=!!(chair&&String(chair[memberField]||'')===String(g.id));
+    const chairLabel=chairAssigned?chair.nama:(chair?'Belum valid — '+chair.nama:(g.ketua?'Belum terhubung: '+String(g.ketua):'Belum ditetapkan'));
+    return `<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px"><div class="row"><div><b>${esc(g.nama||g.kode||'Tanpa nama')}</b><div class="sub">${esc(g.kode||'')} · Ketua: ${esc(chairLabel)}</div></div><div style="text-align:right"><b>${fmt(active)}</b><div class="hint">anggota aktif dari ${fmt(members.length)} terdaftar</div><button type="button" data-member-add="${esc(g.id)}" style="margin-top:6px">+ Tambah anggota</button></div></div>
+      ${members.length?`<div class="tbl" style="margin-top:10px"><table><thead><tr><th>Nama anggota</th><th>Jabatan</th><th>Dapil</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${members.map(m=>`<tr><td>${esc(m.nama||'Tanpa nama')}</td><td>${esc(m.jabatan||'—')}</td><td>${esc(m.dapil||'—')}</td><td><span class="pill ${m.status==='Nonaktif'?'s-Tertunda':'s-Aktif'}">${esc(m.status||'—')}</span></td><td><button type="button" data-member-edit="${esc(m.id)}">Ubah di Anggota DPRD</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Belum ada anggota ditempatkan. Klik “Tambah anggota”; formulir Anggota DPRD akan dibuka dengan kelompok ini terpilih.</div>'}
+    </div>`;
+  }).join('')}
+  ${(()=>{const known=new Set(dbAll(id).map(g=>String(g.id)));const orphan=dbAll('anggota').filter(m=>m[memberField]&&!known.has(String(m[memberField])));return orphan.length?`<div style="margin-top:12px;padding:12px;border:1px solid rgba(247,144,9,.5);border-radius:10px;background:rgba(247,144,9,.06)"><b>Penempatan yang belum terhubung (${orphan.length})</b><div class="sub" style="margin:4px 0 8px">Nilai ini tidak cocok dengan data master ${groupLabel.toLowerCase()} yang tersedia. Edit anggota dan pilih ${groupLabel.toLowerCase()} yang benar, atau buat data master yang belum tersedia.</div>${orphan.map(m=>`<div class="row" style="padding:5px 0;border-top:1px solid var(--line)"><span>${esc(m.nama||'Tanpa nama')} <span class="sub">· ${esc(String(m[memberField]))}</span></span><button type="button" data-member-edit="${esc(m.id)}">Perbaiki di Anggota DPRD</button></div>`).join('')}</div>`:''})()}</div>`;
+  $$('[data-member-edit]',box).forEach(btn=>btn.onclick=()=>openForm('anggota',btn.dataset.memberEdit));
+  $$('[data-member-add]',box).forEach(btn=>btn.onclick=()=>openForm('anggota',null,{[memberField]:btn.dataset.memberAdd}));
 }
 function cellVal(r,c){
   const [k,,ty,opt]=c, v=r[k];
-  if(ty==='hit')return fmt(dbAll(opt[0]).filter(x=>x[opt[1]]===r.id&&!(opt[2]||[]).includes(x.status)).length);
+  if(ty==='hit')return fmt(dbAll(opt[0]).filter(x=>String(x[opt[1]]||'')===String(r.id)&&!(opt[2]||[]).includes(x.status)).length);
   if(k==='status')return `<span class="pill s-${esc(v)}">${esc(v)}</span>`;
-  if(ty==='rel'){const t=dbAll(opt).find(x=>x.id===v);return t?esc(t.nama||t.kode):'<span class="sub">—</span>'}
+  if(ty==='rel'){const t=dbAll(opt).find(x=>String(x.id)===String(v));return t?esc(t.nama||t.kode):(v?`<span class="pill s-Tertunda">Belum terhubung: ${esc(v)}</span>`:'<span class="sub">—</span>')}
   if(ty==='num')return fmt(v);
   return esc(v??'');
 }
 function resolveRefs(){
+  // Data lama pernah menyimpan nama/kode relasi, sedangkan formulir sekarang memakai ID.
+  // Normalisasi dilakukan setelah seluruh tabel selesai dimuat; nilai yang tidak cocok
+  // dipertahankan agar bisa ditampilkan sebagai referensi yatim dan diperbaiki manual.
   Object.keys(FIELDS).forEach(t=>FIELDS[t].forEach(([k,,ty,opt])=>{
     if(ty!=='rel')return;
     (TABLES[t]||[]).forEach(r=>{
-      if(r[k]&&!dbAll(opt).some(x=>x.id===r[k])){const h=dbAll(opt).find(x=>x.kode===r[k]||x.nama===r[k]);r[k]=h?h.id:''}
+      const value=r[k];
+      if(!value||dbAll(opt).some(x=>String(x.id)===String(value)))return;
+      let matches=dbAll(opt).filter(x=>String(x.kode||'').trim().toLowerCase()===String(value).trim().toLowerCase()||String(x.nama||'').trim().toLowerCase()===String(value).trim().toLowerCase());
+      if(matches.length!==1&&(k==='ketua'&&(t==='fraksi'||t==='komisi'))){
+        const legacy=String(value).trim().toLowerCase();
+        if(legacy.length>=4)matches=dbAll(opt).filter(x=>String(x.nama||'').trim().toLowerCase().startsWith(legacy));
+      }
+      if(matches.length===1)r[k]=matches[0].id;
     });
   }));
 }
-function openForm(t,id){
+function validateMembershipEdit(t,id,row,fd){
+  if(t==='anggota'&&id){
+    for(const field of ['fraksi','komisi']){
+      const oldValue=String(row[field]||''), newValue=String(fd[field]||'');
+      if(oldValue===newValue||!oldValue)continue;
+      const group=dbAll(field).find(g=>String(g.id)===oldValue);
+      if(group&&String(group.ketua||'')===String(row.id)){
+        return `Anggota ${row.nama||''} masih tercatat sebagai Ketua ${LABEL[field]} "${group.nama||group.kode}". Ubah ketua pada modul ${LABEL[field]} terlebih dahulu, baru pindahkan anggota ini.`;
+      }
+    }
+  }
+  if((t==='fraksi'||t==='komisi')&&fd.ketua){
+    if(!id)return `Simpan ${LABEL[t].toLowerCase()} terlebih dahulu. Setelah itu tempatkan anggota melalui modul Anggota DPRD, lalu pilih ketua.`;
+    const member=dbAll('anggota').find(m=>String(m.id)===String(fd.ketua));
+    if(!member||String(member[t]||'')!==String(id))return `Ketua yang dipilih harus merupakan anggota yang sudah ditempatkan pada ${LABEL[t].toLowerCase()} ini. Atur keanggotaan melalui modul Anggota DPRD.`;
+  }
+  return '';
+}
+function openForm(t,id,preset={}){
   const cols=FIELDS[t]||STD;
-  const row=id?dbAll(t).find(r=>r.id===id):{};
+  const row=id?dbAll(t).find(r=>r.id===id):{...(preset||{})};
+  const relationHint=t==='anggota'
+    ? 'Sumber keanggotaan: pilih Fraksi dan Komisi untuk anggota ini. Daftar anggota serta jumlah anggota pada modul Komisi dan Fraksi akan dihitung otomatis dari pilihan ini.'
+    : (t==='fraksi'||t==='komisi')
+      ? `Jangan memasukkan anggota di sini. Buat/edit data kelompok ini, lalu atur penempatan anggota di menu Anggota DPRD. Ketua hanya dapat dipilih dari anggota yang sudah ditempatkan pada ${LABEL[t].toLowerCase()} ini.`
+      : '';
   $('#modal').innerHTML=`<div class="row"><h1 style="font-size:17px">${id?'Ubah':'Tambah'} · ${esc(LABEL[t])}</h1><button onclick="closeM()">✕</button></div>
   <form class="form" style="margin-top:12px" id="f">
+  ${relationHint?`<div class="full hint" style="padding:10px;border-radius:10px;background:var(--bg);border:1px solid var(--line)">${esc(relationHint)}</div>`:''}
+  <div class="full" id="formError" style="display:none;color:var(--bad);padding:8px 10px;border:1px solid rgba(240,68,56,.35);background:rgba(240,68,56,.06);border-radius:8px"></div>
   ${cols.filter(c=>c[2]!=='hit').map(([k,l,ty,opt,ex])=>{
     const v=row[k]??'';
     const full=ty==='ta'||k==='keterangan'?'full':'';
     let inp;
     if(ty==='sel')inp=`<select name="${k}">${opt.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
-    else if(ty==='rel'){ let lst=dbAll(opt), lbl=l; if(ex&&ex.via&&id){ const m=lst.filter(x=>x[ex.via]===id); if(m.length){lst=m;lbl=l+' (anggota '+LABEL[t]+' ini)'} } l=lbl; inp=`<select name="${k}"><option value="">— pilih —</option>${lst.map(x=>`<option value="${x.id}" ${x.id===v?'selected':''}>${esc(x.nama||x.kode)}</option>`).join('')}</select>`; }
+    else if(ty==='rel'){
+      let lst=dbAll(opt), lbl=l, placeholder='— pilih —', leaderRelation=!!(ex&&ex.via&&opt==='anggota'&&(t==='fraksi'||t==='komisi'));
+      if(leaderRelation){
+        if(id)lst=lst.filter(x=>String(x[ex.via]||'')===String(id));
+        else lst=[];
+        placeholder=id?(lst.length?'— pilih ketua dari anggota kelompok ini —':'Belum ada anggota; atur melalui Anggota DPRD'):'Simpan kelompok dahulu, lalu pilih anggota';
+        lbl=l+' (dari Anggota DPRD)';
+      }
+      const hasCurrentTarget=lst.some(x=>String(x.id)===String(v));
+      const unresolvedOption=v&&!hasCurrentTarget?`<option value="${esc(v)}" selected>Belum terhubung: ${esc(v)}</option>`:'';
+      const options=lst.map(x=>`<option value="${esc(x.id)}" ${String(x.id)===String(v)?'selected':''}>${esc(x.nama||x.kode)}${leaderRelation&&x.status==='Nonaktif'?' (Nonaktif)':''}</option>`).join('');
+      inp=`<select name="${k}"><option value="">${esc(placeholder)}</option>${unresolvedOption}${options}</select>`;
+    }
     else if(ty==='ta')inp=`<textarea name="${k}" rows="3">${esc(v)}</textarea>`;
     else inp=`<input name="${k}" type="${ty==='num'?'number':ty==='date'?'date':'text'}" value="${esc(v)}">`;
     return `<label class="${full}">${esc(l)}${inp}</label>`}).join('')}
@@ -815,8 +900,14 @@ function openForm(t,id){
     e.preventDefault();
     const fd=Object.fromEntries(new FormData(e.target));
     cols.forEach(([k,,ty])=>{if(ty==='num')fd[k]=Number(fd[k]||0)});
+    // Select ketua yang disediakan khusus untuk sebuah kelompok boleh kosong,
+    // tetapi tidak boleh menunjuk ke anggota kelompok lain.
+    const validation=validateMembershipEdit(t,id,row,fd);
+    if(validation){const err=$('#formError');err.textContent=validation;err.style.display='block';return;}
     dbSave(t,{...row,...fd,id:id||undefined});
-    closeM(); toast('Data tersimpan'); renderModule(t);
+    closeM(); toast('Data tersimpan');
+    const returnModule=(t==='anggota'&&['komisi','fraksi'].includes(location.hash.slice(1)))?location.hash.slice(1):t;
+    renderModule(returnModule);
   };
 }
 function refsTo(t,id){
@@ -832,10 +923,16 @@ function delRow(t,id){ const used=refsTo(t,id); if(used.length){ alert('Record i
 function closeM(){ $('#ov').classList.remove('show') }
 
 /* ============ EXPORT ============ */
+function exportFieldValue(t,r,c){
+  const [k,,ty,opt]=c;
+  if(ty==='hit')return dbAll(opt[0]).filter(x=>String(x[opt[1]]||'')===String(r.id)&&!(opt[2]||[]).includes(x.status)).length;
+  if(ty==='rel') { const target=dbAll(opt).find(x=>String(x.id)===String(r[k])); return target?(target.nama||target.kode||target.id):(r[k]||''); }
+  return r[k]??'';
+}
 function exportCsv(id){
   const cols=FIELDS[id]||STD, rows=filtered(id);
   const esc2=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const csv='\uFEFF'+[cols.map(c=>esc2(c[1])).join(','),...rows.map(r=>cols.map(c=>esc2(r[c[0]])).join(','))].join('\r\n');
+  const csv='\uFEFF'+[cols.map(c=>esc2(c[1])).join(','),...rows.map(r=>cols.map(c=>esc2(exportFieldValue(id,r,c))).join(','))].join('\r\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download=`ARKA_${id}_${today()}.csv`; a.click();
@@ -844,7 +941,7 @@ function exportCsv(id){
 function printTable(id){
   const cols=FIELDS[id]||STD, rows=filtered(id);
   const w=window.open('','_blank');
-  w.document.write(`<html><head><title>${esc(LABEL[id])}</title><style>body{font:12px Arial;margin:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:5px;text-align:left}th{background:#eee}</style></head><body><h3>${esc(LABEL[id])} — Sekretariat DPRD Kabupaten Kapuas Hulu</h3><table><tr>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}</tr>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c[0]])}</td>`).join('')}</tr>`).join('')}</table></body></html>`);
+  w.document.write(`<html><head><title>${esc(LABEL[id])}</title><style>body{font:12px Arial;margin:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:5px;text-align:left}th{background:#eee}</style></head><body><h3>${esc(LABEL[id])} — Sekretariat DPRD Kabupaten Kapuas Hulu</h3><table><tr>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}</tr>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(exportFieldValue(id,r,c))}</td>`).join('')}</tr>`).join('')}</table></body></html>`);
   w.document.close(); w.print();
   logAudit('CETAK',id,{nama:'PDF ('+rows.length+' baris)'});
 }
@@ -955,6 +1052,9 @@ async function arkaLoad() {
     if (error) throw error;
     TABLES[t] = (data || []).map(r => arkaFromRow(t, r));
   }
+  // Anggota DPRD adalah sumber keanggotaan. Normalisasi data lama yang masih
+  // menyimpan nama/kode fraksi/komisi/ketua agar tampilan dan perhitungan selaras.
+  resolveRefs();
 }
 async function arkaWrite(t, row, isNew) {
   const { error } = await sb.from(arkaTn(t)).upsert(arkaToRow(t, row));
