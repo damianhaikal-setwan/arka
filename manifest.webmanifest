@@ -1,0 +1,33 @@
+{
+  "id": "./",
+  "name": "ARKA — Arsitektur Rekam Kinerja dan Administrasi DPRD",
+  "short_name": "ARKA",
+  "description": "Arsitektur Rekam Kinerja dan Administrasi DPRD",
+  "lang": "id-ID",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f5f9",
+  "theme_color": "#0f1b33",
+  "icons": [
+    {
+      "src": "./arka-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./arka-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./arka-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f1b33">
+<meta name="description" content="ARKA — Arsitektur Rekam Kinerja dan Administrasi DPRD">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="arka-icon.svg" type="image/svg+xml">
 <title>ARKA – Arsitektur Rekam Kinerja dan Administrasi DPRD</title>
 <style>
 :root{--bg:#f3f5f9;--surface:#fff;--ink:#1b2535;--muted:#667085;--line:#e3e7ee;--brand:#1d4ed8;--brand2:#0ea5e9;--ok:#12b76a;--warn:#f79009;--bad:#f04438;--side:#0f1b33;--sideTxt:#c3cde2;--r:14px;--sh:0 1px 2px rgba(16,24,40,.06),0 4px 16px rgba(16,24,40,.06)}
@@ -142,7 +146,7 @@ body.collapsed #navq{display:none}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 /* Versi aplikasi dipakai pada laporan Pemeriksaan Sistem dan Daftar Uji. */
-const ARKA_APP_VERSION = '19.0.0';
+const ARKA_APP_VERSION = '20.0.0';
 const ARKA_BUILD_DATE = '2026-10-23';
 /* ===== KONFIGURASI SUPABASE =====
    Konfigurasi dapat diisi dari tombol ⚙ pada antarmuka dan disimpan pada browser.
@@ -201,27 +205,40 @@ const uid=()=>Math.random().toString(36).slice(2,9);
 const TABLES={};          // { modul: [rows] }
 const AUDIT=[];           // jejak audit
 function dbAll(t){return TABLES[t]||[]}
+function ratioPct(n,d){
+  if(n===null||n===undefined||n===''||d===null||d===undefined||d==='')return null;
+  const numerator=Number(n), denominator=Number(d);
+  if(!Number.isFinite(numerator)||!Number.isFinite(denominator)||denominator<=0)return null;
+  return numerator/denominator*100;
+}
+function fmtPct(v,digits=1){return v===null?'—':`${v.toFixed(digits)}%`}
 function dbSave(t,row){
-  if(!canWrite(t)){toast('Peran Anda tidak dapat mengubah data modul ini');return row}
-  const list=TABLES[t]=TABLES[t]||[];
+  if(!canWrite(t)){toast('Peran Anda tidak dapat mengubah data modul ini');return Promise.reject(new Error('Akses tulis ditolak oleh aplikasi.'))}
+  if(CLOUD && !navigator.onLine){return Promise.reject(new Error('Perangkat sedang offline. Data cloud tidak disimpan; sambungkan jaringan lalu coba kembali.'))}
   const isNew=!row.id; if(isNew){row.id=uid();row.dibuat=today()}
   row.diubah=today();
-  const i=list.findIndex(r=>r.id===row.id);
-  if(i>=0)list[i]=row; else list.push(row);
-  // Master/assignment changes can resolve legacy name-based links elsewhere in memory.
-  if(['anggota','komisi','fraksi'].includes(t))resolveRefs();
-  logAudit(isNew?'TAMBAH':'UBAH',t,row);
-  if(CLOUD)arkaWrite(t,row,isNew).catch(e=>{toast('Gagal menyimpan ke server: '+e.message);arkaLoad().then(()=>go())});
-  return row;
+  const commit=()=>{
+    const list=TABLES[t]=TABLES[t]||[];
+    const i=list.findIndex(r=>r.id===row.id);
+    if(i>=0)list[i]=row; else list.push(row);
+    if(['anggota','komisi','fraksi'].includes(t))resolveRefs();
+    logAudit(isNew?'TAMBAH':'UBAH',t,row);
+    return row;
+  };
+  if(!CLOUD)return Promise.resolve(commit());
+  return arkaWrite(t,row,isNew).then(()=>commit()).catch(async e=>{
+    if(e.dataCommitted){
+      try{await arkaLoad()}catch(_){}
+      logAudit(isNew?'TAMBAH':'UBAH',t,row);
+      toast('Data tersimpan di database, tetapi audit trail gagal. Jangan ulangi input; admin harus memeriksa audit_log.');
+      const partial=new Error(e.message); partial.dataCommitted=true; throw partial;
+    }
+    try{await arkaLoad()}catch(_){}
+    throw e;
+  });
 }
-function dbDelete(t,id){
-  const r=(TABLES[t]||[]).find(x=>x.id===id);
-  TABLES[t]=(TABLES[t]||[]).filter(x=>x.id!==id);
-  if(r)logAudit('HAPUS',t,r);
-  if(CLOUD)arkaDelete(t,id).catch(e=>{toast('Gagal menghapus di server: '+e.message);arkaLoad().then(()=>go())});
-}
-function logAudit(aksi,t,row){
-  AUDIT.unshift({waktu:new Date().toLocaleString('id-ID'),aksi,modul:t,ref:row.nama||row.kode||row.id,user:'Admin Sekwan'});
+function logAudit(aksi,t,row,userOverride){
+  AUDIT.unshift({waktu:new Date().toLocaleString('id-ID'),aksi,modul:t,ref:row.nama||row.kode||row.id,user:userOverride||ARKA_NAMA||(CLOUD?'Pengguna terautentikasi':'Pengguna lokal')});
   if(AUDIT.length>200)AUDIT.pop();
   renderNotif();
 }
@@ -674,34 +691,39 @@ function go(){
 /* ============ DASHBOARD ============ */
 function renderDash(){
   const iku=dbAll('iku'), prog=dbAll('program');
-  const avgIku=iku.length?iku.reduce((a,r)=>a+(r.capaian/r.target*100),0)/iku.length:0;
-  const serapan=prog.reduce((a,r)=>a+Number(r.realisasi),0)/Math.max(1,prog.reduce((a,r)=>a+Number(r.pagu),0))*100;
-  const ev=evidenceRows().length;
+  const validIku=iku.map(r=>ratioPct(r.capaian,r.target)).filter(v=>v!==null);
+  const avgIku=validIku.length?validIku.reduce((a,v)=>a+v,0)/validIku.length:null;
+  const serapan=ratioPct(prog.reduce((a,r)=>a+Number(r.realisasi||0),0),prog.reduce((a,r)=>a+Number(r.pagu||0),0));
+  const ev='—'; // Belum ada relasi bukti aktual yang diverifikasi; jangan hitung baris sintetis sebagai evidence.
+  const pengaduan=dbAll('pengaduan'), audiensi=dbAll('audiensi'), hearing=dbAll('hearing');
+  const selesai=(rows,statusKey='status')=>rows.filter(r=>r[statusKey]==='Selesai').length;
+  const pctRows=rows=>rows.length?`${selesai(rows)} / ${rows.length} (${fmtPct(selesai(rows)/rows.length*100,0)})`:'Belum ada data';
+  const kpiValue=(v)=>v===null?'—':fmtPct(v);
   $('#view').innerHTML=`
-  <div class="row"><div><h1>Dashboard Eksekutif</h1><div class="sub">Sekretariat DPRD Kabupaten Kapuas Hulu · ${new Date().toLocaleDateString('id-ID',{dateStyle:'full'})}</div></div>
+  <div class="row"><div><h1>Dashboard Eksekutif</h1><div class="sub">Sekretariat DPRD Kabupaten Kapuas Hulu · ${new Date().toLocaleDateString('id-ID',{dateStyle:'full'})}</div><div class="sub">${CLOUD?'Mode Supabase: angka dihitung dari record yang berhasil dimuat.':'MODE LOKAL: data sesi/contoh, bukan data produksi dan tidak persisten.'} “—” berarti belum dapat dihitung dari data yang tersedia.</div></div>
   <div class="actions noprint"><button onclick="window.print()">🖨 Cetak PDF</button></div></div>
   <div class="kpis">
-    ${kpi('Pegawai Aktif',dbAll('pegawai').filter(r=>r.status==='Aktif').length,'dari '+dbAll('pegawai').length+' pegawai')}
+    ${kpi('Pegawai Aktif',dbAll('pegawai').filter(r=>r.status==='Aktif').length,'dari '+dbAll('pegawai').length+' record pegawai')}
     ${kpi('Anggota DPRD',dbAll('anggota').length,dbAll('fraksi').length+' fraksi · '+dbAll('komisi').length+' komisi')}
-    ${kpi('Capaian IKU',avgIku.toFixed(1)+'%','rata-rata '+iku.length+' indikator')}
-    ${kpi('Serapan Program',serapan.toFixed(1)+'%','realisasi terhadap pagu')}
-    ${kpi('Evidence Terhubung',ev,'dokumen bukti kinerja')}
-    ${kpi('Serapan Anggaran',pctOf(dbAll('anggaran'),'realisasi','pagu').toFixed(1)+'%','realisasi AG terhadap pagu')}
-    ${kpi('SPJ Terlambat',dbAll('spj').filter(r=>r.status==='Terlambat').length,'dari '+dbAll('spj').length+' SPJ')}
-    ${kpi('Temuan Terbuka',dbAll('temuan').filter(r=>r.status!=='Selesai').length,'dari '+dbAll('temuan').length+' temuan')}
-    ${kpi('Pokir Masuk APBD',dbAll('pokir').filter(r=>r.status==='Masuk APBD').length,'dari '+dbAll('pokir').length+' usulan')}
+    ${kpi('Capaian IKU',kpiValue(avgIku),`${validIku.length} dari ${iku.length} indikator memiliki target > 0 dan capaian numerik`)}
+    ${kpi('Serapan Program',kpiValue(serapan),'realisasi ÷ pagu program; hanya jika total pagu > 0')}
+    ${kpi('Evidence Terverifikasi',ev,'belum dihitung: relasi bukti aktual belum tersedia di modul ini')}
+    ${kpi('Serapan Anggaran',fmtPct(ratioPct(dbAll('anggaran').reduce((a,r)=>a+Number(r.realisasi||0),0),dbAll('anggaran').reduce((a,r)=>a+Number(r.pagu||0),0))),'realisasi ÷ pagu dari modul Anggaran')}
+    ${kpi('SPJ Terlambat',dbAll('spj').filter(r=>r.status==='Terlambat').length,'dari '+dbAll('spj').length+' record SPJ')}
+    ${kpi('Temuan Terbuka',dbAll('temuan').filter(r=>r.status!=='Selesai').length,'dari '+dbAll('temuan').length+' record temuan')}
+    ${kpi('Pokir Masuk APBD',dbAll('pokir').filter(r=>r.status==='Masuk APBD').length,'dari '+dbAll('pokir').length+' usulan Pokir')}
   </div>
   <div class="grid2">
-    <div class="card"><div class="row"><b>Capaian IKU Sekretariat</b><span class="hint">Realisasi vs Target</span></div>
-      ${iku.map(r=>{const p=Math.min(100,r.capaian/r.target*100);return `<div class="rowbar"><span>${esc(r.kode)} ${esc(r.nama).slice(0,28)}…</span><div class="bar"><i style="width:${p}%"></i></div><b>${p.toFixed(0)}%</b></div>`}).join('')}
+    <div class="card"><div class="row"><b>Capaian IKU Sekretariat</b><span class="hint">Capaian ÷ target</span></div>
+      ${iku.map(r=>{const p=ratioPct(r.capaian,r.target);return `<div class="rowbar"><span>${esc(r.kode)} ${esc(r.nama).slice(0,28)}…</span><div class="bar"><i style="width:${p===null?0:Math.max(0,Math.min(100,p))}%"></i></div><b>${p===null?'—':p.toFixed(0)+'%'}</b></div>`}).join('')||'<div class="empty">Belum ada data IKU</div>'}
     </div>
     <div class="card"><b>Serapan Program</b>
-      ${prog.map(r=>{const p=r.realisasi/r.pagu*100;return `<div class="rowbar"><span>${esc(r.nama).slice(0,24)}…</span><div class="bar"><i style="width:${p}%"></i></div><b>${p.toFixed(0)}%</b></div>`}).join('')}
+      ${prog.map(r=>{const p=ratioPct(r.realisasi,r.pagu);return `<div class="rowbar"><span>${esc(r.nama).slice(0,24)}…</span><div class="bar"><i style="width:${p===null?0:Math.max(0,Math.min(100,p))}%"></i></div><b>${p===null?'—':p.toFixed(0)+'%'}</b></div>`}).join('')||'<div class="empty">Belum ada data program</div>'}
     </div>
   </div>
   <div class="grid2">
-    <div class="card"><b>KPI DPRD</b>${kpiTable([['Rapat Paripurna dilaksanakan','12 / 12','Tercapai'],['Perda dibahas','4 / 5','Proses'],['Reses dilaksanakan','3 / 3','Tercapai'],['Pengaduan ditindaklanjuti','88%','Proses']])}</div>
-    <div class="card"><b>KPI Sekretariat</b>${kpiTable([['Nilai SAKIP','78,5','Proses'],['Persentase BMD tercatat','100%','Tercapai'],['Ketepatan SPJ','92%','Proses'],['Dokumen persuratan selesai','97%','Tercapai']])}</div>
+    <div class="card"><b>Indikator Operasional DPRD</b>${kpiTable([['Rapat paripurna',pctRows(dbAll('paripurna')),'Data'],['Propemperda selesai',pctRows(dbAll('propemperda')),'Data'],['Reses selesai',pctRows(dbAll('reses')),'Data'],['Pengaduan selesai',pctRows(pengaduan),'Data']])}</div>
+    <div class="card"><b>Indikator Operasional Sekretariat</b>${kpiTable([['Nilai SAKIP','Belum tersedia dari sumber resmi','Belum tersedia'],['BMD tercatat dan terverifikasi','Belum tersedia dari data validasi BMD','Belum tersedia'],['SPJ selesai',pctRows(dbAll('spj')),'Data'],['Dokumen persuratan selesai',pctRows(dbAll('persuratan')),'Data']])}</div>
   </div>`;
 }
 const kpi=(t,n,d)=>`<div class="card kpi"><div class="t">${t}</div><div class="n">${n}</div><div class="d sub">${d}</div></div>`;
@@ -1123,10 +1145,17 @@ function openForm(t,id,preset={}){
     }
     const validation=validateMembershipEdit(t,id,row,fd);
     if(validation){const err=$('#formError');err.textContent=validation;err.style.display='block';return;}
-    dbSave(t,{...row,...fd,id:id||undefined});
-    closeM(); toast('Data tersimpan');
-    const returnModule=(t==='anggota'&&['komisi','fraksi'].includes(location.hash.slice(1)))?location.hash.slice(1):t;
-    renderModule(returnModule);
+    const submit=e.target, submitBtn=submit.querySelector('button[type="submit"]');
+    submitBtn.disabled=true; submitBtn.textContent='Menyimpan…';
+    dbSave(t,{...row,...fd,id:id||undefined}).then(()=>{
+      closeM(); toast(CLOUD?'Data tersimpan dan dikonfirmasi server':'Data tersimpan pada sesi lokal');
+      const returnModule=(t==='anggota'&&['komisi','fraksi'].includes(location.hash.slice(1)))?location.hash.slice(1):t;
+      renderModule(returnModule);
+    }).catch(err=>{
+      const box=$('#formError'); box.textContent=err.dataCommitted?'DATA SUDAH TERSIMPAN DI DATABASE, TETAPI AUDIT TRAIL GAGAL. Jangan ulangi input. Hubungi admin untuk memeriksa audit_log. '+(err.message||err):'Penyimpanan gagal; data belum dikonfirmasi tersimpan. '+(err.message||err); box.style.display='block';
+      submitBtn.disabled=false; submitBtn.textContent=err.dataCommitted?'Tutup setelah dicatat admin':'Coba simpan lagi';
+      if(err.dataCommitted){submitBtn.disabled=true;submitBtn.textContent='Audit perlu diperiksa';}
+    });
   };
 }
 function refsToRecords(t,id){
@@ -1198,7 +1227,16 @@ async function delRow(t,id){
       list[idx]=updated;
       logAudit('PUTUS REFERENSI',ref.module,updated);
     }
-    if(CLOUD)await arkaDelete(t,id);
+    if(CLOUD){
+      await arkaDelete(t,id);
+      try{await arkaAudit('HAPUS',t,row)}catch(auditErr){
+        TABLES[t]=(TABLES[t]||[]).filter(r=>String(r.id)!==String(id));
+        await arkaLoad().catch(()=>{});
+        renderModule(t);
+        toast(`Record terhapus di server, tetapi audit trail gagal ditulis. Hentikan operasi lanjutan dan periksa audit_log: ${auditErr.message||auditErr}`);
+        return;
+      }
+    }
     TABLES[t]=(TABLES[t]||[]).filter(r=>String(r.id)!==String(id));
     logAudit('HAPUS',t,row);
     toast(`${label} berhasil dihapus${refs.length?' dan referensi terkait dikosongkan':''}`);
@@ -1250,27 +1288,27 @@ function printTable(id){
 
 /* ============ EVIDENCE CENTER ============ */
 function evidenceRows(){
-  return dbAll('iku').map(i=>({
-    record:i.nama, evidence:`Laporan capaian ${i.kode}`, indikator:i.kode,
-    sasaran:'Sasaran Sekretariat', renstra:'Renstra DPRD 2025–2029', unit:i.unit, status:i.status
-  }));
+  // Jangan membuat bukti, sasaran, atau dokumen Renstra sintetis. Sampai relasi bukti aktual
+  // tersedia, setiap IKU ditampilkan sebagai belum terhubung, bukan sebagai evidence terverifikasi.
+  return dbAll('iku').map(i=>({record:i.nama,indikator:i.kode,unit:i.unit,status:'Belum terhubung'}));
 }
 function renderEvidence(){
   const rows=evidenceRows();
-  $('#view').innerHTML=`<div><h1>Evidence Center</h1><div class="sub">Rantai: Record → Evidence → Indikator → Sasaran → Renstra</div></div>
-  <div class="card tbl"><table><tr><th>Record</th><th>Evidence</th><th>Indikator</th><th>Sasaran</th><th>Renstra</th><th>Status</th></tr>
-  ${rows.map(r=>`<tr><td>${esc(r.record)}</td><td>${esc(r.evidence)}</td><td>${esc(r.indikator)}</td><td>${esc(r.sasaran)}</td><td>${esc(r.renstra)}</td><td><span class="pill s-${esc(r.status)}">${esc(r.status)}</span></td></tr>`).join('')}
+  $('#view').innerHTML=`<div><h1>Evidence Center</h1><div class="sub">Record → Evidence → Indikator → Sasaran → Renstra. Hanya relasi aktual yang boleh dihitung sebagai bukti.</div></div>
+  <div class="card"><b>Status integritas evidence</b><p>Modul saat ini belum menyediakan relasi berkas bukti aktual pada tampilan ini. Karena itu, aplikasi tidak mengarang nama laporan, sasaran, atau Renstra dan tidak menyatakan bukti telah terhubung.</p></div>
+  <div class="card tbl"><table><tr><th>Record</th><th>Indikator</th><th>Unit</th><th>Status evidence</th></tr>
+  ${rows.map(r=>`<tr><td>${esc(r.record)}</td><td>${esc(r.indikator)}</td><td>${esc(r.unit||'—')}</td><td><span class="pill">Belum terhubung</span></td></tr>`).join('')||'<tr><td colspan="4">Belum ada data IKU</td></tr>'}
   </table></div>`;
 }
 
 /* ============ ANALYTICS ============ */
-const pct=(a,f)=>a.length?a.filter(f).length/a.length*100:0;
+const pct=(a,f)=>a.length?a.filter(f).length/a.length*100:null;
 const pctOf=(a,n,d)=>{const t=a.reduce((x,r)=>x+Number(r[d]||0),0);return t?a.reduce((x,r)=>x+Number(r[n]||0),0)/t*100:0};
 function renderAnalytics(id){
   const name=LABEL[id];
-  const data={'an-sakip':dbAll('iku').map(r=>[r.kode,r.capaian/r.target*100]),'an-keu':dbAll('anggaran').map(r=>[r.kode,r.pagu?r.realisasi/r.pagu*100:0]),'an-legis':[['Propemperda selesai',pct(dbAll('propemperda'),r=>r.status==='Selesai')],['Ranperda ditetapkan',pct(dbAll('ranperda'),r=>r.tahapan==='Ditetapkan')],['Harmonisasi selesai',pct(dbAll('harmonisasi'),r=>r.status==='Selesai')]],'an-awas':[['Temuan selesai',pct(dbAll('temuan'),r=>r.status==='Selesai')],['Rekomendasi selesai',pct(dbAll('rekomendasi'),r=>r.status==='Selesai')],['Tindak lanjut selesai',pct(dbAll('tindaklanjut'),r=>r.status==='Selesai')]],'an-aspirasi':[['Reses selesai',pct(dbAll('reses'),r=>r.status==='Selesai')],['Pokir masuk APBD',pct(dbAll('pokir'),r=>r.status==='Masuk APBD')],['Pengaduan selesai',pct(dbAll('pengaduan'),r=>r.status==='Selesai')]],'an-puas':[['Pengaduan selesai',pct(dbAll('pengaduan'),r=>r.status==='Selesai')],['Audiensi selesai',pct(dbAll('audiensi'),r=>r.status==='Selesai')],['Hearing selesai',pct(dbAll('hearing'),r=>r.status==='Selesai')]]}[id];
+  const data={'an-sakip':dbAll('iku').map(r=>[r.kode,ratioPct(r.capaian,r.target)]),'an-keu':dbAll('anggaran').map(r=>[r.kode,ratioPct(r.realisasi,r.pagu)]),'an-legis':[['Propemperda selesai',pct(dbAll('propemperda'),r=>r.status==='Selesai')],['Ranperda ditetapkan',pct(dbAll('ranperda'),r=>r.tahapan==='Ditetapkan')],['Harmonisasi selesai',pct(dbAll('harmonisasi'),r=>r.status==='Selesai')]],'an-awas':[['Temuan selesai',pct(dbAll('temuan'),r=>r.status==='Selesai')],['Rekomendasi selesai',pct(dbAll('rekomendasi'),r=>r.status==='Selesai')],['Tindak lanjut selesai',pct(dbAll('tindaklanjut'),r=>r.status==='Selesai')]],'an-aspirasi':[['Reses selesai',pct(dbAll('reses'),r=>r.status==='Selesai')],['Pokir masuk APBD',pct(dbAll('pokir'),r=>r.status==='Masuk APBD')],['Pengaduan selesai',pct(dbAll('pengaduan'),r=>r.status==='Selesai')]],'an-puas':[['Pengaduan selesai (bukan skor kepuasan)',pct(dbAll('pengaduan'),r=>r.status==='Selesai')],['Audiensi selesai (bukan skor kepuasan)',pct(dbAll('audiensi'),r=>r.status==='Selesai')],['Hearing selesai (bukan skor kepuasan)',pct(dbAll('hearing'),r=>r.status==='Selesai')]]}[id];
   $('#view').innerHTML=`<div><h1>${esc(name)}</h1><div class="sub">Analytics Center · nilai dihitung dari data modul terkait</div></div>
-  <div class="card">${data.map(([k,v])=>`<div class="rowbar"><span>${esc(k)}</span><div class="bar"><i style="width:${Math.min(100,v)}%"></i></div><b>${v.toFixed(0)}%</b></div>`).join('')}</div>`;
+  <div class="card">${data.map(([k,v])=>`<div class="rowbar"><span>${esc(k)}</span><div class="bar"><i style="width:${v===null?0:Math.max(0,Math.min(100,v))}%"></i></div><b>${v===null?'—':v.toFixed(0)+'%'}</b></div>`).join('')}</div>`;
 }
 
 /* ============ CADANGAN JSON (pengganti penyimpanan; siap dimigrasikan ke Supabase) ============ */
@@ -1354,10 +1392,20 @@ async function arkaLoad() {
     if (error) throw error;
     TABLES[t] = (data || []).map(r => arkaFromRow(t, r));
   }
-  // Anggota DPRD adalah sumber keanggotaan. Normalisasi data lama yang masih
-  // menyimpan nama/kode fraksi/komisi/ketua agar tampilan dan perhitungan selaras.
   resolveRefs();
   migrateLegacyKetua();
+}
+async function arkaLoadAudit(){
+  const {data,error}=await sb.from('audit_log').select('*').limit(200);
+  if(error)throw error;
+  const rows=(data||[]).map(a=>({
+    waktu:a.created_at||a.waktu||a.timestamp||a.tanggal||'Waktu tidak tersedia',
+    aksi:a.aksi||'AKTIVITAS',modul:a.modul||'sistem',
+    ref:a.ref||a.record_id||'—',user:a.user_name||a.email||a.user_id||'Pengguna tidak diketahui'
+  }));
+  rows.sort((a,b)=>String(b.waktu).localeCompare(String(a.waktu)));
+  AUDIT.splice(0,AUDIT.length,...rows);
+  renderNotif();
 }
 async function arkaWrite(t, row, isNew, auditAction) {
   const { error } = await sb.from(arkaTn(t)).upsert(arkaToRow(t, row));
@@ -1367,7 +1415,19 @@ async function arkaWrite(t, row, isNew, auditAction) {
     aksi: auditAction || (isNew ? 'TAMBAH' : 'UBAH'), modul: t,
     ref: row.nama || row.kode || row.id, user_name: u?.user?.email ?? 'tidak diketahui'
   });
-  if (e2) throw e2;
+  if (e2) {
+    const err=new Error(`Record sudah tersimpan di database, tetapi audit_log gagal ditulis: ${e2.message||e2}`);
+    err.dataCommitted=true; err.auditFailed=true; throw err;
+  }
+}
+async function arkaAudit(aksi,t,row){
+  const { data: u, error: userError } = await sb.auth.getUser();
+  if(userError)throw userError;
+  const { error } = await sb.from('audit_log').insert({
+    aksi, modul:t, ref:row.nama||row.kode||row.id,
+    user_name:u?.user?.email ?? 'tidak diketahui'
+  });
+  if(error)throw error;
 }
 async function arkaDelete(t, id) {
   const { error } = await sb.from(arkaTn(t)).delete().eq('id', id);
@@ -1394,7 +1454,10 @@ async function startCloud(){
   $('#login').classList.remove('show');
   $('#out').style.display='';
   $('#out').title=`Keluar (${ARKA_NAMA} · ${ARKA_ROLE}${ARKA_UNIT?' · '+UNITS[ARKA_UNIT]:''})`;
-  arkaLoad().then(()=>go()).catch(e=>{go();toast('Gagal memuat data: '+e.message)});
+  arkaLoad().then(async()=>{
+    try{await arkaLoadAudit()}catch(e){toast('Data modul termuat, tetapi riwayat audit server tidak dapat dibaca. Periksa policy SELECT audit_log: '+e.message)}
+    go();
+  }).catch(e=>{go();toast('Gagal memuat data: '+e.message)});
 }
 async function doLogin(e){
   e.preventDefault();
@@ -2868,6 +2931,12 @@ if(window.matchMedia('(max-width:900px)').matches)document.body.classList.add('m
 if(window.matchMedia('(prefers-color-scheme: dark)').matches)document.documentElement.classList.add('dark');
 
 renderNotif();
+window.addEventListener('offline',()=>toast(CLOUD?'OFFLINE: perubahan cloud tidak akan tersimpan. Jangan lanjutkan input penting.':'Offline: mode lokal hanya menyimpan data dalam sesi ini.'));
+window.addEventListener('online',()=>toast('Jaringan kembali tersedia. Pastikan status cloud dan data sebelum melanjutkan.'));
+if(!navigator.onLine) setTimeout(()=>toast(CLOUD?'OFFLINE: perubahan cloud tidak akan tersimpan.':'Offline: mode lokal hanya menyimpan data dalam sesi ini.'),300);
+if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('PWA service worker tidak aktif:',err)));
+}
 if(!location.hash)location.hash='dash';
 if(CLOUD){
   sb.auth.onAuthStateChange(ev=>{ if(ev==='SIGNED_OUT') showLogin(); });
