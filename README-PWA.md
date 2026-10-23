@@ -1,4 +1,4 @@
-# ARKA PWA — paket v20
+# ARKA PWA — paket v23
 
 ## Isi paket
 - `index.html`: aplikasi ARKA yang diperbaiki.
@@ -30,3 +30,21 @@ Perbaikan frontend bukan pengganti Supabase RLS. RLS, Storage policies, Edge Fun
 5. Uji bahwa non-admin tidak bisa membaca/menulis `audit_log`, tidak bisa mengubah `profiles`, dan admin tetap dapat mengelola pengguna melalui Edge Function.
 6. Baru deploy `index.html` dari paket ini. Jangan deploy aplikasi tanpa migrasi audit v21, karena CRUD bisnis tidak lagi membuat audit manual.
 7. Setelah seluruh uji lulus, jadwalkan jendela perubahan dan terapkan di produksi.
+
+
+## Perbaikan login v22 dan email dummy
+- Pesan login sekarang membedakan kredensial salah, email belum terkonfirmasi, dan kegagalan koneksi/DNS.
+- **Aplikasi tidak dapat mematikan konfirmasi email dari sisi browser.** Pengaturan ini harus diubah pada proyek Supabase yang benar: `Authentication → Providers → Email → Confirm email` menjadi OFF, lalu simpan. Nama menu dapat sedikit berbeda menurut versi dashboard.
+- Untuk akun dummy yang sudah dibuat saat Confirm email ON, perubahan pengaturan belum tentu otomatis memverifikasi akun lama. Periksa `Authentication → Users`; konfirmasi akun yang memang Anda kendalikan atau hapus dan buat ulang akun uji setelah Confirm email OFF.
+- Gunakan alamat dummy hanya untuk pengujian. Jangan menonaktifkan konfirmasi email untuk aplikasi publik/produksi tanpa menilai risikonya.
+- Screenshot sebelumnya menunjukkan `ERR_NAME_NOT_RESOLVED` / `Failed to fetch`. Itu menandakan browser tidak dapat menemukan/menghubungi hostname Supabase (sering karena Project URL salah, proyek tidak aktif, atau DNS/jaringan). Menonaktifkan Confirm email **tidak memperbaiki** masalah DNS. Buka `⚙ Konfigurasi koneksi Supabase`, salin Project URL persis dari `Supabase → Project Settings → API`, dan pastikan anon/publishable key berasal dari proyek yang sama.
+
+## Setelah mengganti versi
+Unggah ulang `index.html`, `sw.js`, `manifest.webmanifest`, dan ikon dari paket ini ke hosting HTTPS. Cache PWA v23 sudah dibedakan dari v21; tutup lalu buka ulang aplikasi. Pastikan URL dan key Supabase benar sebelum mencoba login.
+
+
+## Konfigurasi Supabase tertanam v23
+
+Project URL, publishable key, dan slug Edge Function `arka-users-admin` sudah ditanamkan di `index.html`. Konfigurasi lokal lama dari proyek lain tidak akan menimpa Project URL bawaan. Publishable/anon key boleh berada di browser; jangan pernah menanamkan service_role/secret key. Keamanan data tetap bergantung pada RLS, grants, dan pemeriksaan otorisasi Edge Function.
+
+Project URL tertanam: `https://gsmrhrgcilzuelrorarr.supabase.co`. Deploy ulang `index.html` dan `sw.js` dari paket v23 pada hosting HTTPS.

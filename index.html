@@ -146,23 +146,30 @@ body.collapsed #navq{display:none}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 /* Versi aplikasi dipakai pada laporan Pemeriksaan Sistem dan Daftar Uji. */
-const ARKA_APP_VERSION = '21.0.0';
+const ARKA_APP_VERSION = '23.0.0';
 const ARKA_BUILD_DATE = '2026-10-23';
 /* ===== KONFIGURASI SUPABASE =====
    Konfigurasi dapat diisi dari tombol ⚙ pada antarmuka dan disimpan pada browser.
    Hanya URL proyek, anon/publishable key, dan slug Edge Function yang boleh berada di browser.
    JANGAN pernah memasukkan service_role / secret key ke file HTML. */
 const ARKA_CONFIG_STORAGE_KEY = 'arka_supabase_config_v1';
+/* Konfigurasi bawaan ARKA. Nilai ini ikut tersimpan di setiap salinan/deploy HTML.
+   Hanya gunakan publishable/anon key; jangan pernah menanamkan service_role/secret key. */
+const ARKA_EMBEDDED_CONFIG = Object.freeze({
+  url: 'https://gsmrhrgcilzuelrorarr.supabase.co',
+  anonKey: 'sb_publishable_gdDUVrD16HQaVB-nrgdqeg_B2Rk7v9H',
+  functionSlug: 'arka-users-admin'
+});
 function arkaReadConfig() {
   try { const value = JSON.parse(localStorage.getItem(ARKA_CONFIG_STORAGE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; }
   catch (_) { return {}; }
 }
 const ARKA_RUNTIME_CONFIG = arkaReadConfig();
-const SUPABASE_URL = String(ARKA_RUNTIME_CONFIG.url || 'https://gsmhrhgc1zluelorarr.supabase.co').trim().replace(/\/+$/, '');
-const SUPABASE_ANON_KEY = String(ARKA_RUNTIME_CONFIG.anonKey || '').trim();
-/* Tangkapan layar Supabase memperlihatkan endpoint /functions/v1/quick-task.
-   Slug bisa diubah dari menu konfigurasi tanpa mengubah nama fungsi di kode. */
-const SUPABASE_USERS_FUNCTION = String(ARKA_RUNTIME_CONFIG.functionSlug || 'quick-task').trim();
+/* Jangan biarkan konfigurasi lama dari proyek lain menimpa konfigurasi yang ditanamkan. */
+const ARKA_SAVED_CONFIG_MATCHES_PROJECT = String(ARKA_RUNTIME_CONFIG.url || '').trim().replace(/\/+$/, '') === ARKA_EMBEDDED_CONFIG.url;
+const SUPABASE_URL = ARKA_EMBEDDED_CONFIG.url;
+const SUPABASE_ANON_KEY = String((ARKA_SAVED_CONFIG_MATCHES_PROJECT && ARKA_RUNTIME_CONFIG.anonKey) || ARKA_EMBEDDED_CONFIG.anonKey).trim();
+const SUPABASE_USERS_FUNCTION = String((ARKA_SAVED_CONFIG_MATCHES_PROJECT && ARKA_RUNTIME_CONFIG.functionSlug) || ARKA_EMBEDDED_CONFIG.functionSlug).trim();
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase !== 'undefined');
 let ARKA_ROLE = null, ARKA_NAMA = '', ARKA_UNIT = null;
 /* Unit kerja sesuai Perbup Kapuas Hulu Nomor 57 Tahun 2021, Pasal 5 dan Lampiran */
@@ -1445,12 +1452,31 @@ async function startCloud(){
 async function doLogin(e){
   e.preventDefault();
   $('#lerr').textContent='';
+  if(!CLOUD){
+    $('#lerr').textContent='Koneksi Supabase belum siap. Buka ⚙ Konfigurasi koneksi Supabase dan periksa Project URL serta anon/publishable key.';
+    return;
+  }
   $('#lbtn').disabled=true;
-  const {error}=await sb.auth.signInWithPassword({email:$('#lemail').value.trim(),password:$('#lpass').value});
-  $('#lbtn').disabled=false;
-  if(error){ $('#lerr').textContent='Email atau kata sandi tidak sesuai.'; return; }
-  $('#lpass').value='';
-  startCloud();
+  $('#lbtn').textContent='Menghubungkan…';
+  try{
+    const {error}=await sb.auth.signInWithPassword({email:$('#lemail').value.trim(),password:$('#lpass').value});
+    if(error){
+      const msg=String(error.message||'');
+      if(/confirm|verified|verification/i.test(msg)) $('#lerr').textContent='Email akun belum terkonfirmasi. Jika memakai email dummy, nonaktifkan Confirm email di Supabase Auth → Providers → Email, lalu buat ulang akun atau konfirmasi akun yang sudah ada.';
+      else if(/invalid.*credential|invalid login|email.*password/i.test(msg)) $('#lerr').textContent='Email atau kata sandi tidak sesuai. Pastikan akun sudah dibuat di Supabase Authentication → Users.';
+      else $('#lerr').textContent='Login ditolak oleh Supabase: '+msg;
+      return;
+    }
+    $('#lpass').value='';
+    await startCloud();
+  }catch(err){
+    const msg=String(err?.message||err||'');
+    $('#lerr').textContent='Supabase tidak dapat dijangkau (gagal fetch/DNS). Periksa internet, Project URL di ⚙ Konfigurasi koneksi Supabase, status proyek Supabase, dan anon/publishable key. Ini bukan masalah konfirmasi email.';
+    console.error('ARKA login connection error:',msg);
+  }finally{
+    $('#lbtn').disabled=false;
+    $('#lbtn').textContent='Masuk';
+  }
 }
 function doLogout(){ sb.auth.signOut().then(showLogin); }
 
@@ -2604,14 +2630,14 @@ function openConfigDialog() {
   // Jika dibuka dari form login, sembunyikan login agar modal konfigurasi dapat digunakan.
   $('#login').classList.remove('show');
   const cfg = arkaReadConfig();
-  const guessedUrl = 'https://gsmhrhgc1zluelorarr.supabase.co';
+  const guessedUrl = ARKA_EMBEDDED_CONFIG.url;
   $('#modal').innerHTML = `<div class="row"><div><h2 style="margin:0;font-size:19px">Konfigurasi koneksi Supabase</h2><div class="sub">Pengaturan ini disimpan pada browser yang sedang digunakan.</div></div><button type="button" id="cfgClose">Tutup</button></div>
     <form id="arkaConfigForm" style="margin-top:14px"><div class="form">
       <label class="full">Project URL<input id="cfgUrl" type="url" required maxlength="300" value="${esc(cfg.url || guessedUrl)}" placeholder="https://project-ref.supabase.co"></label>
-      <label class="full">Anon / Publishable key<input id="cfgAnon" type="text" required autocomplete="off" spellcheck="false" value="${esc(cfg.anonKey || '')}" placeholder="Tempelkan anon/public atau publishable key"></label>
-      <label class="full">Slug endpoint Edge Function<input id="cfgFunction" type="text" required maxlength="63" pattern="[a-z0-9][a-z0-9-]{0,62}" value="${esc(cfg.functionSlug || 'quick-task')}" placeholder="quick-task"></label>
+      <label class="full">Anon / Publishable key<input id="cfgAnon" type="text" required autocomplete="off" spellcheck="false" value="${esc((cfg.url === ARKA_EMBEDDED_CONFIG.url && cfg.anonKey) || ARKA_EMBEDDED_CONFIG.anonKey)}" placeholder="Tempelkan anon/public atau publishable key"></label>
+      <label class="full">Slug endpoint Edge Function<input id="cfgFunction" type="text" required maxlength="63" pattern="[a-z0-9][a-z0-9-]{0,62}" value="${esc((cfg.url === ARKA_EMBEDDED_CONFIG.url && cfg.functionSlug) || ARKA_EMBEDDED_CONFIG.functionSlug)}" placeholder="arka-users-admin"></label>
     </div>
-    <div class="card" style="margin-top:12px;background:var(--bg)"><b>Jangan isi key rahasia di sini.</b><div class="sub" style="margin-top:4px">Gunakan hanya anon/public key atau publishable key. Jangan pernah memasukkan service_role key, secret key, atau password akun. Endpoint default <code>quick-task</code> berasal dari URL yang terlihat pada tangkapan layar; pastikan cocok dengan URL fungsi yang benar.</div></div>
+    <div class="card" style="margin-top:12px;background:var(--bg)"><b>Jangan isi key rahasia di sini.</b><div class="sub" style="margin-top:4px">Gunakan hanya anon/public key atau publishable key. Jangan pernah memasukkan service_role key, secret key, atau password akun. Konfigurasi bawaan sudah ditanamkan di HTML. Pastikan slug fungsi tersedia pada proyek Supabase ini.</div></div>
     <div class="toolbar" style="justify-content:flex-end;margin-top:14px"><button type="button" id="cfgReset">Hapus konfigurasi tersimpan</button><button type="submit" class="btn-p">Simpan & muat ulang</button></div>
     <div class="hint" id="cfgError" style="color:var(--bad);margin-top:8px;min-height:18px"></div></form>`;
   $('#ov').classList.add('show');
