@@ -1,5 +1,5 @@
 /* ARKA PWA shell cache. Supabase API/auth/storage responses are never cached. */
-const CACHE_NAME = 'arka-shell-v20';
+const CACHE_NAME = 'arka-shell-v21';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './arka-icon.svg', './arka-icon-192.png', './arka-icon-512.png'];
 const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js',

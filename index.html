@@ -146,7 +146,7 @@ body.collapsed #navq{display:none}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 /* Versi aplikasi dipakai pada laporan Pemeriksaan Sistem dan Daftar Uji. */
-const ARKA_APP_VERSION = '20.0.0';
+const ARKA_APP_VERSION = '21.0.0';
 const ARKA_BUILD_DATE = '2026-10-23';
 /* ===== KONFIGURASI SUPABASE =====
    Konfigurasi dapat diisi dari tombol ⚙ pada antarmuka dan disimpan pada browser.
@@ -1228,14 +1228,8 @@ async function delRow(t,id){
       logAudit('PUTUS REFERENSI',ref.module,updated);
     }
     if(CLOUD){
+      // Trigger audit database mencatat HAPUS secara atomik bersama DELETE.
       await arkaDelete(t,id);
-      try{await arkaAudit('HAPUS',t,row)}catch(auditErr){
-        TABLES[t]=(TABLES[t]||[]).filter(r=>String(r.id)!==String(id));
-        await arkaLoad().catch(()=>{});
-        renderModule(t);
-        toast(`Record terhapus di server, tetapi audit trail gagal ditulis. Hentikan operasi lanjutan dan periksa audit_log: ${auditErr.message||auditErr}`);
-        return;
-      }
     }
     TABLES[t]=(TABLES[t]||[]).filter(r=>String(r.id)!==String(id));
     logAudit('HAPUS',t,row);
@@ -1396,7 +1390,7 @@ async function arkaLoad() {
   migrateLegacyKetua();
 }
 async function arkaLoadAudit(){
-  const {data,error}=await sb.from('audit_log').select('*').limit(200);
+  const {data,error}=await sb.from('audit_log').select('waktu,aksi,modul,ref,user_name,user_id,sumber').order('waktu',{ascending:false}).limit(200);
   if(error)throw error;
   const rows=(data||[]).map(a=>({
     waktu:a.created_at||a.waktu||a.timestamp||a.tanggal||'Waktu tidak tersedia',
@@ -1408,27 +1402,12 @@ async function arkaLoadAudit(){
   renderNotif();
 }
 async function arkaWrite(t, row, isNew, auditAction) {
+  // Audit INSERT/UPDATE dibuat oleh trigger database dalam transaksi yang sama.
+  // Jika trigger audit gagal, upsert ikut gagal dan tidak ada sukses semu di UI.
   const { error } = await sb.from(arkaTn(t)).upsert(arkaToRow(t, row));
   if (error) throw error;
-  const { data: u } = await sb.auth.getUser();
-  const { error: e2 } = await sb.from('audit_log').insert({
-    aksi: auditAction || (isNew ? 'TAMBAH' : 'UBAH'), modul: t,
-    ref: row.nama || row.kode || row.id, user_name: u?.user?.email ?? 'tidak diketahui'
-  });
-  if (e2) {
-    const err=new Error(`Record sudah tersimpan di database, tetapi audit_log gagal ditulis: ${e2.message||e2}`);
-    err.dataCommitted=true; err.auditFailed=true; throw err;
-  }
 }
-async function arkaAudit(aksi,t,row){
-  const { data: u, error: userError } = await sb.auth.getUser();
-  if(userError)throw userError;
-  const { error } = await sb.from('audit_log').insert({
-    aksi, modul:t, ref:row.nama||row.kode||row.id,
-    user_name:u?.user?.email ?? 'tidak diketahui'
-  });
-  if(error)throw error;
-}
+
 async function arkaDelete(t, id) {
   const { error } = await sb.from(arkaTn(t)).delete().eq('id', id);
   if (error) throw error;
@@ -1455,7 +1434,11 @@ async function startCloud(){
   $('#out').style.display='';
   $('#out').title=`Keluar (${ARKA_NAMA} · ${ARKA_ROLE}${ARKA_UNIT?' · '+UNITS[ARKA_UNIT]:''})`;
   arkaLoad().then(async()=>{
-    try{await arkaLoadAudit()}catch(e){toast('Data modul termuat, tetapi riwayat audit server tidak dapat dibaca. Periksa policy SELECT audit_log: '+e.message)}
+    if(ARKA_ROLE==='admin'){
+      try{await arkaLoadAudit()}catch(e){toast('Data modul termuat, tetapi riwayat audit server tidak dapat dibaca. Periksa policy SELECT audit_log: '+e.message)}
+    }else{
+      AUDIT.splice(0,AUDIT.length);
+    }
     go();
   }).catch(e=>{go();toast('Gagal memuat data: '+e.message)});
 }

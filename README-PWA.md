@@ -20,3 +20,13 @@
 
 ## Status keamanan backend
 Perbaikan frontend bukan pengganti Supabase RLS. RLS, Storage policies, Edge Function authorization, dan transaksi audit atomik harus diverifikasi pada proyek backend sebenarnya. Tidak ada kebijakan produksi yang diubah oleh paket ini.
+
+
+## Audit backend v21 — urutan wajib
+1. Backup database dan deploy ke staging.
+2. Pastikan `arka_schema.sql` dan (jika digunakan) migrasi `keanggotaan_akd` telah diterapkan.
+3. Jalankan `arka_audit_security_migration_v21.sql` di staging.
+4. Uji tambah/ubah/hapus dengan akun authenticated; pastikan tiap operasi menghasilkan tepat satu catatan trigger dalam `audit_log`.
+5. Uji bahwa non-admin tidak bisa membaca/menulis `audit_log`, tidak bisa mengubah `profiles`, dan admin tetap dapat mengelola pengguna melalui Edge Function.
+6. Baru deploy `index.html` dari paket ini. Jangan deploy aplikasi tanpa migrasi audit v21, karena CRUD bisnis tidak lagi membuat audit manual.
+7. Setelah seluruh uji lulus, jadwalkan jendela perubahan dan terapkan di produksi.
