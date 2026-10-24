@@ -1566,7 +1566,7 @@ const RENJA_WORKSPACE_TABS=[['identitas','Identitas Renja'],['program','Program'
 function renjaText(v){return String(v??'').trim()||'—';}
 function renjaMoney(v){return v===null||v===undefined||String(v).trim()===''?'—':'Rp '+fmt(v);}
 function renjaForDoc(t,docId){return dbAll(t).filter(r=>String(r.renjaRef||'')===String(docId));}
-function renjaOrphans(t){return dbAll(t).filter(r=>!String(r.renjaRef||'').trim());}
+function renjaOrphans(t){const validDocs=new Set(dbAll('renja').map(d=>String(d.id)));return dbAll(t).filter(r=>{const ref=String(r.renjaRef||'').trim();return !ref||!validDocs.has(ref);});}
 function renjaParentName(t,id){const r=dbAll(t).find(x=>String(x.id)===String(id));return r?`${r.kode||''} ${r.nama||''}`.trim():'[Induk tidak ditemukan]';}
 function renjaSetTab(tab,targetSelector){RENJA_WORKSPACE_TAB=tab;renderRenjaWorkspace(tab,targetSelector);}
 function openRenjaEditor(t,id,preset={},tabAfter){
@@ -1597,7 +1597,7 @@ function renjaValidation(doc){
     }
   });
   if(!doc.renstraRef)issues.push({level:'warning',text:'Dokumen Renja belum ditautkan ke Sasaran Renstra acuan.'});
-  for(const t of ['program','kegiatan','subkegiatan']){const n=renjaOrphans(t);if(n.length)issues.push({level:'warning',text:`Ada ${n.length} record ${LABEL[t]||t} lama tanpa referensi Renja. Record tidak dimasukkan ke rekap dokumen secara otomatis.`});}
+  for(const t of ['program','kegiatan','subkegiatan']){const n=renjaOrphans(t);if(n.length)issues.push({level:'warning',text:`Ada ${n.length} record ${LABEL[t]||t} tanpa referensi Renja valid (kosong atau dokumen induk tidak ditemukan). Record tidak dimasukkan ke rekap otomatis.`});}
   return issues;
 }
 function renjaBudgetLeaves(doc){
@@ -1632,7 +1632,7 @@ function renjaRincianTable(tab,doc){
   }
   const empty=list.length?'':`<tr><td colspan="${tab==='program'?7:8}" class="empty">Belum ada ${tab==='program'?'Program':tab==='kegiatan'?'Kegiatan':'Subkegiatan'} yang tertaut ke dokumen ini. Gunakan tombol Tambah untuk memulai.</td></tr>`;
   let orphan='';const unlinked=renjaOrphans(tab);
-  if(unlinked.length){orphan=`<div class="rw-warning" style="margin-top:12px"><b>Record lama belum terhubung ke Renja (${unlinked.length})</b><div class="sub" style="margin:4px 0 8px">Record ini sengaja tidak dimasukkan ke rekap RJ-${esc(doc.tahun)}. Buka Ubah, pastikan datanya memang milik dokumen ini, lalu pilih Dokumen Renja yang sesuai.</div><div class="rw-table"><table><thead><tr><th>Kode</th><th>Nama</th><th>Tahun</th><th>Aksi</th></tr></thead><tbody>${unlinked.map(r=>`<tr><td>${esc(r.kode||'—')}</td><td>${esc(r.nama||'—')}</td><td>${esc(r.tahun||'—')}</td><td>${canWrite(tab)?`<button type="button" data-rw-link="${esc(tab)}" data-rw-id="${esc(r.id)}">Tautkan setelah verifikasi</button>`:'Hanya baca'}</td></tr>`).join('')}</tbody></table></div></div>`;}
+  if(unlinked.length){orphan=`<div class="rw-warning" style="margin-top:12px"><b>Record belum terhubung atau referensi Renja tidak valid (${unlinked.length})</b><div class="sub" style="margin:4px 0 8px">Record ini sengaja tidak dimasukkan ke rekap RJ-${esc(doc.tahun)}. Buka Ubah, pastikan pemilik/tahun dokumennya, lalu pilih Dokumen Renja yang benar.</div><div class="rw-table"><table><thead><tr><th>Kode</th><th>Nama</th><th>Tahun</th><th>Aksi</th></tr></thead><tbody>${unlinked.map(r=>`<tr><td>${esc(r.kode||'—')}</td><td>${esc(r.nama||'—')}</td><td>${esc(r.tahun||'—')}</td><td>${canWrite(tab)?`<button type="button" data-rw-link="${esc(tab)}" data-rw-id="${esc(r.id)}">Tautkan setelah verifikasi</button>`:'Hanya baca'}</td></tr>`).join('')}</tbody></table></div></div>`;}
   return `<div class="rw-shell"><div class="card"><div class="rw-toolbar"><div class="grow"><h2>${tab==='program'?'Program dalam Renja':tab==='kegiatan'?'Kegiatan dalam Renja':'Subkegiatan dalam Renja'}</h2><div class="sub">Semua record di sini difilter menurut dokumen <b>${esc(doc.kode||doc.id)}</b> dan tahun ${esc(doc.tahun)}.</div></div>${canWrite(tab)?`<button type="button" class="btn-p" id="rwAddItem">+ Tambah ${tab==='program'?'Program':tab==='kegiatan'?'Kegiatan':'Subkegiatan'}</button>`:''}</div><div class="rw-table" style="margin-top:12px"><table><thead><tr>${heads}</tr></thead><tbody>${body||empty}</tbody></table></div>${orphan}</div></div>`;
 }
 function renjaInstallActions(host,tab,doc){
@@ -1710,6 +1710,9 @@ function renderRenjaWorkspace(tab=RENJA_WORKSPACE_TAB,targetSelector=null){
 }
 function printRenjaTC33(){
   const d=dbAll('renja').find(x=>String(x.id)===String(RENJA_WORKSPACE_ID));if(!d){toast('Pilih dokumen Renja terlebih dahulu.');return;}
+  const issues=renjaValidation(d);
+  const blockers=issues.filter(x=>x.level==='error'||(x.level==='warning'&&/^Pagu (Program|Kegiatan) .* berbeda dari jumlah pagu/.test(x.text)));
+  if(blockers.length){toast(`Cetak T-C.33 dibatalkan: ${blockers.length} masalah relasi/tahun atau rekonsiliasi pagu belum diselesaikan. Periksa bagian Validasi data Renja.`);return;}
   const rows=renjaOutputRows(d),year=Number(d.tahun)||new Date().getFullYear(),nextYear=year+1;
   const w=window.open('','_blank');if(!w){toast('Izinkan pop-up untuk mencetak atau menyimpan PDF.');return;}
   const escPrint=esc;

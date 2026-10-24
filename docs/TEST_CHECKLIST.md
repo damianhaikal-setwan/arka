@@ -1,6 +1,7 @@
 # Checklist uji penerimaan Renja Workspace
 
 ## A. Pra-pengujian
+- [ ] Jalankan `node tests/validate-html.mjs` dari root; harus memakai `index.html` tanpa path `app/` yang tidak ada.
 - [ ] Catat branch dan commit repo sebelum menggabungkan perubahan.
 - [ ] Simpan salinan HTML yang sedang dipakai dan buat backup Supabase.
 - [ ] Jalankan migrasi pada project/branch nonproduksi terlebih dahulu.
@@ -10,13 +11,15 @@
 - [ ] Workspace Renja muncul dari navigasi Perencanaan → Renja.
 - [ ] Lima tab internal dapat dibuka tanpa menampilkan CRUD lama di atasnya.
 - [ ] Pilih dokumen Renja yang benar; tidak ada duplikasi kode dokumen.
-- [ ] Tambah Program, simpan, muat ulang; nilai dan `renja_ref` tetap ada.
-- [ ] Tambah Kegiatan di bawah Program, simpan, muat ulang; relasi `program` tetap benar.
+- [ ] Tambah Program berstatus `Draft`, simpan, muat ulang; constraint database menerima status dan `renja_ref` tetap ada.
+- [ ] Tambah Kegiatan berstatus `Draft` di bawah Program, simpan, muat ulang; constraint database menerima status dan relasi `program` tetap benar.
 - [ ] Tambah Subkegiatan di bawah Kegiatan, simpan, muat ulang; relasi `kegiatan` tetap benar.
 - [ ] Ubah target/pagu, simpan, muat ulang; perubahan tetap ada.
 - [ ] Coba relasi induk dari Renja lain; harus ditolak.
 - [ ] Coba tahun anak berbeda dari tahun Renja; harus ditolak.
 - [ ] Coba ubah tahun dokumen setelah memiliki detail; harus ditolak.
+- [ ] Coba hapus dokumen Renja yang masih mempunyai detail; FK harus menolak penghapusan.
+- [ ] Coba cetak ketika ada error relasi/tahun atau selisih pagu induk-anak; pencetakan harus diblokir.
 
 ## C. Integritas dan keluaran
 - [ ] Semua orphan terdaftar dan tidak otomatis ditautkan.

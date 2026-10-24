@@ -25,5 +25,9 @@ Workspace memetakan kode; urusan/bidang dan nomenklatur Program/Kegiatan/Subkegi
 ## Status komponen
 
 - Workspace UI, tab internal, CRUD dan pemeriksaan relasi dasar: kandidat telah diuji di browser lokal.
-- Migrasi Supabase: disiapkan dan ditinjau secara statis; tetap perlu dijalankan dan diuji pada project Supabase target.
+- Migrasi awal dan guardrails Supabase: ditinjau secara statis; tetap perlu dijalankan dan diuji pada project Supabase target. Guardrails memperbaiki status `Draft`, menambahkan FK `renja_ref` `NOT VALID`, dan mencegah penghapusan Renja yang masih dirujuk.
 - RLS, persistensi end-to-end, audit database, snapshot publikasi, serta semua derivasi ke modul monitoring/evaluasi: perlu pengujian/integrasi lanjut sebelum klaim siap produksi.
+
+- Cetak T-C.33 diblokir bila ditemukan kesalahan relasi/tahun atau pagu induk berbeda dari total anak langsung. Ini adalah fail-closed sementara sampai jenis pagu subtotal versus alokasi langsung dimodelkan eksplisit.
+
+- Snapshot ini belum memperlihatkan subscription Supabase Realtime atau optimistic locking per record; kedua fitur harus diimplementasikan dan diuji terpisah sebelum mengandalkan konsistensi lintas pengguna.

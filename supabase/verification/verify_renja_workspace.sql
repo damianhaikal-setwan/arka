@@ -57,3 +57,27 @@ WHERE k.id IS NULL OR p.id IS NULL
    OR s.tahun IS DISTINCT FROM k.tahun
    OR s.renja_ref::text IS DISTINCT FROM p.renja_ref::text
    OR s.tahun IS DISTINCT FROM p.tahun;
+
+-- 4) Detect non-empty renja_ref values that point to a missing Renja document.
+-- These legacy rows remain untouched by NOT VALID foreign keys and must be mapped explicitly.
+SELECT 'program' AS table_name, p.id AS record_id, p.renja_ref
+FROM public.program p
+LEFT JOIN public.renja r ON r.id::text = p.renja_ref::text
+WHERE NULLIF(btrim(p.renja_ref::text), '') IS NOT NULL AND r.id IS NULL
+UNION ALL
+SELECT 'kegiatan', k.id, k.renja_ref
+FROM public.kegiatan k
+LEFT JOIN public.renja r ON r.id::text = k.renja_ref::text
+WHERE NULLIF(btrim(k.renja_ref::text), '') IS NOT NULL AND r.id IS NULL
+UNION ALL
+SELECT 'subkegiatan', s.id, s.renja_ref
+FROM public.subkegiatan s
+LEFT JOIN public.renja r ON r.id::text = s.renja_ref::text
+WHERE NULLIF(btrim(s.renja_ref::text), '') IS NOT NULL AND r.id IS NULL;
+
+-- 5) Verify the allowed status values include the Draft state used by the UI.
+SELECT c.conrelid::regclass AS table_name, c.conname, pg_get_constraintdef(c.oid) AS definition
+FROM pg_constraint c
+WHERE c.conrelid IN ('public.program'::regclass, 'public.kegiatan'::regclass)
+  AND c.conname IN ('program_status_chk','kegiatan_status_chk')
+ORDER BY table_name::text;
