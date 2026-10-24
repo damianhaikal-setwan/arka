@@ -324,6 +324,9 @@ async function dbSave(t,row){
   const list=TABLES[t]=TABLES[t]||[];
   const index=list.findIndex(r=>String(r.id)===String(candidate.id));
   if(index>=0) list[index]=candidate; else list.push(candidate);
+  if(['renja','program','kegiatan','subkegiatan'].includes(t)){
+    try { renjaRecomputeCachedBudgets(); } catch(error) { console.error('Rekalkulasi pagu Renja gagal:',error); }
+  }
 
   // Propagasi source-of-truth → relasi → kolom turunan → metrik/alert.
   try { if(typeof RelationEngine!=='undefined') RelationEngine.resolveAll(); } catch(error) { console.error('Relation refresh gagal:',error); }
@@ -1566,7 +1569,47 @@ const RENJA_WORKSPACE_TABS=[['identitas','Identitas Renja'],['program','Program'
 function renjaText(v){return String(v??'').trim()||'—';}
 function renjaMoney(v){return v===null||v===undefined||String(v).trim()===''?'—':'Rp '+fmt(v);}
 function renjaForDoc(t,docId){return dbAll(t).filter(r=>String(r.renjaRef||'')===String(docId));}
-function renjaOrphans(t){return dbAll(t).filter(r=>!String(r.renjaRef||'').trim());}
+function renjaOrphans(t){const validDocs=new Set(dbAll('renja').map(r=>String(r.id)));return dbAll(t).filter(r=>{const ref=String(r.renjaRef||'').trim();return !ref||!validDocs.has(ref);});}
+function renjaSumPagu(rows){return (rows||[]).reduce((sum,row)=>sum+(hasNumericValue(row?.pagu)&&Number(row.pagu)>=0?Number(row.pagu):0),0);}
+function renjaSasaranRenstra(doc){
+  const year=Number(doc?.tahun),supported=Number.isInteger(year)&&year>=2025&&year<=2030,key=`t${year}`;
+  return dbAll('renstra').filter(r=>String(r.jenis||'').trim().toLowerCase()==='sasaran').map(r=>({
+    ...r, targetRenjaYear:year, targetRenja:supported?String(r[key]??'').trim():''
+  })).sort((a,b)=>String(a.kode||'').localeCompare(String(b.kode||''),'id'));
+}
+function renjaComputedKegiatanPagu(doc,kegiatan){
+  return renjaSumPagu(renjaForDoc('subkegiatan',doc.id).filter(r=>String(r.kegiatan||'')===String(kegiatan.id)&&Number(r.tahun)===Number(doc.tahun)));
+}
+function renjaComputedProgramPagu(doc,program){
+  return renjaSumPagu(renjaForDoc('kegiatan',doc.id).filter(r=>String(r.program||'')===String(program.id)&&Number(r.tahun)===Number(doc.tahun)).map(r=>({pagu:renjaComputedKegiatanPagu(doc,r)})));
+}
+function renjaComputedDocumentPagu(doc){
+  return renjaSumPagu(renjaForDoc('program',doc.id).filter(r=>Number(r.tahun)===Number(doc.tahun)).map(r=>({pagu:renjaComputedProgramPagu(doc,r)})));
+}
+function renjaBudgetMismatch(stored,derived){
+  if(!hasNumericValue(stored))return Number(derived)>0.005;
+  return Math.abs(Number(stored)-Number(derived))>0.5;
+}
+function renjaRecomputeCachedBudgets(){
+  // Hitung ulang cache browser setelah CRUD; Supabase trigger menjaga nilai persisten di server.
+  for(const doc of dbAll('renja')){
+    for(const activity of renjaForDoc('kegiatan',doc.id))activity.pagu=renjaComputedKegiatanPagu(doc,activity);
+    for(const program of renjaForDoc('program',doc.id))program.pagu=renjaComputedProgramPagu(doc,program);
+    doc.pagu=renjaComputedDocumentPagu(doc);
+  }
+}
+function renjaDeleteDependencies(docId){
+  const id=String(docId??'');
+  const programs=dbAll('program'), activities=dbAll('kegiatan'), subs=dbAll('subkegiatan');
+  const linkedPrograms=programs.filter(r=>String(r.renjaRef||'')===id);
+  const programIds=new Set(linkedPrograms.map(r=>String(r.id)));
+  // Include descendants whose renja_ref is missing or wrong but whose parent chain
+  // still points into this document. Never treat a broken chain as safe to delete.
+  const linkedActivities=activities.filter(r=>String(r.renjaRef||'')===id||programIds.has(String(r.program||'')));
+  const activityIds=new Set(linkedActivities.map(r=>String(r.id)));
+  const linkedSubs=subs.filter(r=>String(r.renjaRef||'')===id||activityIds.has(String(r.kegiatan||'')));
+  return {program:linkedPrograms.length,kegiatan:linkedActivities.length,subkegiatan:linkedSubs.length,total:linkedPrograms.length+linkedActivities.length+linkedSubs.length};
+}
 function renjaParentName(t,id){const r=dbAll(t).find(x=>String(x.id)===String(id));return r?`${r.kode||''} ${r.nama||''}`.trim():'[Induk tidak ditemukan]';}
 function renjaSetTab(tab,targetSelector){RENJA_WORKSPACE_TAB=tab;renderRenjaWorkspace(tab,targetSelector);}
 function openRenjaEditor(t,id,preset={},tabAfter){
@@ -1582,8 +1625,10 @@ function renjaValidation(doc){
   const currentProgramIds=new Set(p.map(x=>String(x.id))), currentActivityIds=new Set(k.map(x=>String(x.id)));
   dbAll('kegiatan').filter(x=>currentProgramIds.has(String(x.program||''))&&String(x.renjaRef||'')!==String(doc.id)).forEach(x=>issues.push({level:'error',text:`Kegiatan ${x.kode||x.nama} menunjuk Program pada Renja ini tetapi referensi dokumennya berbeda/kosong.`}));
   dbAll('subkegiatan').filter(x=>currentActivityIds.has(String(x.kegiatan||''))&&String(x.renjaRef||'')!==String(doc.id)).forEach(x=>issues.push({level:'error',text:`Subkegiatan ${x.kode||x.nama} menunjuk Kegiatan pada Renja ini tetapi referensi dokumennya berbeda/kosong.`}));
-  p.forEach(x=>{const children=k.filter(y=>String(y.program)===String(x.id));if(children.length&&x.pagu!==''&&x.pagu!==null&&x.pagu!==undefined){const childTotal=children.reduce((a,y)=>a+(Number(y.pagu)||0),0);if(Math.abs(childTotal-(Number(x.pagu)||0))>0.5)issues.push({level:'warning',text:`Pagu Program ${x.kode||x.nama} (${renjaMoney(x.pagu)}) berbeda dari jumlah pagu Kegiatan langsung (${renjaMoney(childTotal)}). Periksa apakah nilai Program merupakan subtotal atau alokasi langsung.`});}});
-  k.forEach(x=>{const children=sk.filter(y=>String(y.kegiatan)===String(x.id));if(children.length&&x.pagu!==''&&x.pagu!==null&&x.pagu!==undefined){const childTotal=children.reduce((a,y)=>a+(Number(y.pagu)||0),0);if(Math.abs(childTotal-(Number(x.pagu)||0))>0.5)issues.push({level:'warning',text:`Pagu Kegiatan ${x.kode||x.nama} (${renjaMoney(x.pagu)}) berbeda dari jumlah pagu Subkegiatan langsung (${renjaMoney(childTotal)}). Periksa subtotal/alokasi langsung.`});}});
+  p.forEach(x=>{const childTotal=renjaComputedProgramPagu(doc,x);if(renjaBudgetMismatch(x.pagu,childTotal))issues.push({level:'warning',code:'RENJA_BUDGET_MISMATCH',text:`Pagu tersimpan Program ${x.kode||x.nama} (${renjaMoney(x.pagu)}) belum sama dengan jumlah otomatis Kegiatan (${renjaMoney(childTotal)}). Pastikan migrasi derivasi pagu dan rekonsiliasi data telah diterapkan.`});});
+  k.forEach(x=>{const childTotal=renjaComputedKegiatanPagu(doc,x);if(renjaBudgetMismatch(x.pagu,childTotal))issues.push({level:'warning',code:'RENJA_BUDGET_MISMATCH',text:`Pagu tersimpan Kegiatan ${x.kode||x.nama} (${renjaMoney(x.pagu)}) belum sama dengan jumlah otomatis Subkegiatan (${renjaMoney(childTotal)}). Pastikan migrasi derivasi pagu dan rekonsiliasi data telah diterapkan.`});});
+  const derivedDocumentPagu=renjaComputedDocumentPagu(doc);
+  if(renjaBudgetMismatch(doc.pagu,derivedDocumentPagu))issues.push({level:'warning',code:'RENJA_DOCUMENT_BUDGET_MISMATCH',text:`Pagu tersimpan dokumen Renja (${renjaMoney(doc.pagu)}) belum sama dengan jumlah otomatis seluruh Program (${renjaMoney(derivedDocumentPagu)}).`});
   const completeness=[...p.map(r=>({t:'Program',r,hasChildren:k.some(x=>String(x.program)===String(r.id))})),...k.map(r=>({t:'Kegiatan',r,hasChildren:sk.some(x=>String(x.kegiatan)===String(r.id))})),...sk.map(r=>({t:'Subkegiatan',r,hasChildren:false}))];
   completeness.forEach(({t,r,hasChildren})=>{
     if(!String(r.indikator||'').trim())issues.push({level:'warning',text:`${t} ${r.kode||r.nama}: indikator belum diisi.`});
@@ -1596,18 +1641,24 @@ function renjaValidation(doc){
       if(r.paguMaju===undefined||r.paguMaju===null||String(r.paguMaju).trim()==='')issues.push({level:'warning',text:`${t} ${r.kode||r.nama}: kebutuhan dana prakiraan maju belum diisi.`});
     }
   });
-  if(!doc.renstraRef)issues.push({level:'warning',text:'Dokumen Renja belum ditautkan ke Sasaran Renstra acuan.'});
-  for(const t of ['program','kegiatan','subkegiatan']){const n=renjaOrphans(t);if(n.length)issues.push({level:'warning',text:`Ada ${n.length} record ${LABEL[t]||t} lama tanpa referensi Renja. Record tidak dimasukkan ke rekap dokumen secara otomatis.`});}
+  const sasaranRenstra=renjaSasaranRenstra(doc);
+  if(!Number.isInteger(Number(doc.tahun))||Number(doc.tahun)<2025||Number(doc.tahun)>2030)issues.push({level:'error',code:'RENJA_TARGET_YEAR_UNSUPPORTED',text:`Target Renstra otomatis hanya tersedia untuk tahun 2025–2030; tahun Renja saat ini ${renjaText(doc.tahun)}.`});
+  if(!sasaranRenstra.length)issues.push({level:'error',code:'RENJA_RENSTRA_SOURCE_MISSING',text:'Belum ada baris jenis Sasaran pada master Renstra. Semua sasaran Renstra harus tersedia sebagai acuan otomatis Renja.'});
+  sasaranRenstra.forEach(r=>{
+    if(!String(r.indikator||'').trim())issues.push({level:'warning',code:'RENJA_RENSTRA_INDICATOR_MISSING',text:`Sasaran Renstra ${r.kode||r.nama} belum mempunyai indikator.`});
+    if(!String(r.targetRenja||'').trim())issues.push({level:'warning',code:'RENJA_RENSTRA_TARGET_MISSING',text:`Sasaran Renstra ${r.kode||r.nama} belum memiliki target untuk tahun ${doc.tahun}.`});
+  });
+  for(const t of ['program','kegiatan','subkegiatan']){const n=renjaOrphans(t);if(n.length)issues.push({level:'warning',code:'RENJA_ORPHAN_REFERENCE',text:`Ada ${n.length} record ${LABEL[t]||t} dengan referensi Renja kosong atau menunjuk dokumen yang tidak ditemukan. Record tersebut tidak dimasukkan ke rekap.`});}
   return issues;
 }
 function renjaBudgetLeaves(doc){
   const p=renjaForDoc('program',doc.id), k=renjaForDoc('kegiatan',doc.id), sk=renjaForDoc('subkegiatan',doc.id), leaves=[];
   p.forEach(pr=>{
     const acts=k.filter(x=>String(x.program)===String(pr.id));
-    if(!acts.length){leaves.push({type:'program',row:pr,program:pr,activity:null});return;}
-    acts.forEach(act=>{const subs=sk.filter(x=>String(x.kegiatan)===String(act.id));if(subs.length)subs.forEach(sub=>leaves.push({type:'subkegiatan',row:sub,program:pr,activity:act}));else leaves.push({type:'kegiatan',row:act,program:pr,activity:act});});
+    if(!acts.length){leaves.push({type:'program',row:{...pr,pagu:renjaComputedProgramPagu(doc,pr)},program:pr,activity:null});return;}
+    acts.forEach(act=>{const subs=sk.filter(x=>String(x.kegiatan)===String(act.id));if(subs.length)subs.forEach(sub=>leaves.push({type:'subkegiatan',row:sub,program:pr,activity:act}));else leaves.push({type:'kegiatan',row:{...act,pagu:renjaComputedKegiatanPagu(doc,act)},program:pr,activity:act});});
   });
-  // Do not silently include orphan children in totals; validation reports them separately.
+  // Total dokumen tetap dihitung dari pagu sumber Subkegiatan melalui derivasi anak→induk.
   return leaves;
 }
 function renjaRowActions(t,row,doc){
@@ -1622,10 +1673,10 @@ function renjaRincianTable(tab,doc){
   const list=renjaForDoc(tab,doc.id);let heads='',body='';
   if(tab==='program'){
     heads='<th>No.</th><th>Kode / Program</th><th>Urusan/Bidang</th><th>Indikator dan target</th><th>Pagu indikatif</th><th>Jumlah Kegiatan</th><th>Aksi</th>';
-    body=list.map((r,i)=>{const kids=dbAll('kegiatan').filter(x=>String(x.renjaRef||'')===String(doc.id)&&String(x.program)===String(r.id));return `<tr><td>${i+1}</td><td><b>${esc(r.kode||'—')}</b><div>${esc(r.nama||'—')}</div><div class="rw-breadcrumb">${esc(r.unit||'')}</div></td><td>${esc(r.urusanBidang||'—')}</td><td>${esc(r.indikator||'—')}<div class="rw-field-note">Target: ${esc(r.target||'—')}</div></td><td class="rw-num">${renjaMoney(r.pagu)}</td><td>${kids.length}</td><td>${renjaRowActions('program',r,doc)}</td></tr>`}).join('');
+    body=list.map((r,i)=>{const kids=dbAll('kegiatan').filter(x=>String(x.renjaRef||'')===String(doc.id)&&String(x.program)===String(r.id));return `<tr><td>${i+1}</td><td><b>${esc(r.kode||'—')}</b><div>${esc(r.nama||'—')}</div><div class="rw-breadcrumb">${esc(r.unit||'')}</div></td><td>${esc(r.urusanBidang||'—')}</td><td>${esc(r.indikator||'—')}<div class="rw-field-note">Target: ${esc(r.target||'—')}</div></td><td class="rw-num">${renjaMoney(renjaComputedProgramPagu(doc,r))}<div class="rw-field-note">Otomatis dari Kegiatan</div></td><td>${kids.length}</td><td>${renjaRowActions('program',r,doc)}</td></tr>`}).join('');
   }else if(tab==='kegiatan'){
     heads='<th>No.</th><th>Kode / Kegiatan</th><th>Program Induk</th><th>Indikator dan target</th><th>Lokasi</th><th>Pagu indikatif</th><th>Subkegiatan</th><th>Aksi</th>';
-    body=list.map((r,i)=>{const kids=dbAll('subkegiatan').filter(x=>String(x.renjaRef||'')===String(doc.id)&&String(x.kegiatan)===String(r.id));return `<tr><td>${i+1}</td><td><b>${esc(r.kode||'—')}</b><div>${esc(r.nama||'—')}</div></td><td>${esc(renjaParentName('program',r.program))}</td><td>${esc(r.indikator||'—')}<div class="rw-field-note">Target: ${esc(r.target||'—')}</div></td><td>${esc(r.lokasi||'—')}</td><td class="rw-num">${renjaMoney(r.pagu)}</td><td>${kids.length}</td><td>${renjaRowActions('kegiatan',r,doc)}</td></tr>`}).join('');
+    body=list.map((r,i)=>{const kids=dbAll('subkegiatan').filter(x=>String(x.renjaRef||'')===String(doc.id)&&String(x.kegiatan)===String(r.id));return `<tr><td>${i+1}</td><td><b>${esc(r.kode||'—')}</b><div>${esc(r.nama||'—')}</div></td><td>${esc(renjaParentName('program',r.program))}</td><td>${esc(r.indikator||'—')}<div class="rw-field-note">Target: ${esc(r.target||'—')}</div></td><td>${esc(r.lokasi||'—')}</td><td class="rw-num">${renjaMoney(renjaComputedKegiatanPagu(doc,r))}<div class="rw-field-note">Otomatis dari Subkegiatan</div></td><td>${kids.length}</td><td>${renjaRowActions('kegiatan',r,doc)}</td></tr>`}).join('');
   }else{
     heads='<th>No.</th><th>Kode / Subkegiatan</th><th>Kegiatan Induk</th><th>Indikator / target</th><th>Lokasi / kelompok sasaran</th><th>Sumber dana</th><th>Pagu indikatif</th><th>Aksi</th>';
     body=list.map((r,i)=>{return `<tr><td>${i+1}</td><td><b>${esc(r.kode||'—')}</b><div>${esc(r.nama||'—')}</div></td><td>${esc(renjaParentName('kegiatan',r.kegiatan))}</td><td>${esc(r.indikator||'—')}<div class="rw-field-note">Target: ${esc(r.target||'—')}</div></td><td>${esc(r.lokasi||'—')}<div class="rw-field-note">${esc(r.kelompokSasaran||'')}</div></td><td>${esc(r.sumberDana||'—')}</td><td class="rw-num">${renjaMoney(r.pagu)}</td><td>${renjaRowActions('subkegiatan',r,doc)}</td></tr>`}).join('');
@@ -1663,10 +1714,10 @@ function renjaOutputRows(doc){
     const acts=activities.filter(x=>String(x.program)===String(pr.id));
     const programHasChildren=acts.length>0;
     const urusan=pr.urusanBidang||'';
-    out.push({level:'Program',kode:pr.kode,nama:pr.nama,urusan,indikator:pr.indikator,lokasi:pr.lokasi,target:pr.target,pagu:programHasChildren?'':pr.pagu,sumberDana:programHasChildren?'':pr.sumberDana,catatan:programHasChildren?'Pagu dan sumber dana dirinci pada Kegiatan di bawahnya.':pr.catatanPenting,targetMaju:pr.targetMaju,paguMaju:programHasChildren?'':pr.paguMaju,parent:null,hasChildren:programHasChildren,record:pr});
+    out.push({level:'Program',kode:pr.kode,nama:pr.nama,urusan,indikator:pr.indikator,lokasi:pr.lokasi,target:pr.target,pagu:programHasChildren?'':renjaComputedProgramPagu(doc,pr),sumberDana:programHasChildren?'':pr.sumberDana,catatan:programHasChildren?'Pagu dan sumber dana dirinci pada Kegiatan di bawahnya.':pr.catatanPenting,targetMaju:pr.targetMaju,paguMaju:programHasChildren?'':pr.paguMaju,parent:null,hasChildren:programHasChildren,record:pr});
     acts.forEach(act=>{
       const children=subs.filter(x=>String(x.kegiatan)===String(act.id));const hasChildren=children.length>0;
-      out.push({level:'Kegiatan',kode:act.kode,nama:act.nama,urusan,indikator:act.indikator,lokasi:act.lokasi,target:act.target,pagu:hasChildren?'':act.pagu,sumberDana:hasChildren?'':act.sumberDana,catatan:hasChildren?'Pagu dan sumber dana dirinci pada Subkegiatan di bawahnya.':act.catatanPenting,targetMaju:act.targetMaju,paguMaju:hasChildren?'':act.paguMaju,parent:pr,hasChildren,record:act});
+      out.push({level:'Kegiatan',kode:act.kode,nama:act.nama,urusan,indikator:act.indikator,lokasi:act.lokasi,target:act.target,pagu:hasChildren?'':renjaComputedKegiatanPagu(doc,act),sumberDana:hasChildren?'':act.sumberDana,catatan:hasChildren?'Pagu dan sumber dana dirinci pada Subkegiatan di bawahnya.':act.catatanPenting,targetMaju:act.targetMaju,paguMaju:hasChildren?'':act.paguMaju,parent:pr,hasChildren,record:act});
       children.forEach(sub=>out.push({level:'Subkegiatan',kode:sub.kode,nama:sub.nama,urusan,indikator:sub.indikator,lokasi:sub.lokasi,target:sub.target,pagu:sub.pagu,sumberDana:sub.sumberDana,catatan:sub.catatanPenting,targetMaju:sub.targetMaju,paguMaju:sub.paguMaju,parent:act,hasChildren:false,record:sub}));
     });
   });
@@ -1674,7 +1725,7 @@ function renjaOutputRows(doc){
 }
 function renjaRenderOutput(doc,host){
   const issues=renjaValidation(doc), leaves=renjaBudgetLeaves(doc), rows=renjaOutputRows(doc);
-  const total=leaves.reduce((a,x)=>a+Math.max(0,Number(x.row.pagu)||0),0), totalMaju=leaves.reduce((a,x)=>a+Math.max(0,Number(x.row.paguMaju)||0),0);
+  const total=renjaComputedDocumentPagu(doc), totalMaju=leaves.reduce((a,x)=>a+Math.max(0,Number(x.row.paguMaju)||0),0);
   const errorCount=issues.filter(x=>x.level==='error').length,warnCount=issues.filter(x=>x.level==='warning').length;
   host.innerHTML=`<div class="rw-shell"><div class="rw-summary"><div class="rw-stat"><div class="sub">Program</div><strong>${renjaForDoc('program',doc.id).length}</strong></div><div class="rw-stat"><div class="sub">Kegiatan</div><strong>${renjaForDoc('kegiatan',doc.id).length}</strong></div><div class="rw-stat"><div class="sub">Subkegiatan</div><strong>${renjaForDoc('subkegiatan',doc.id).length}</strong></div><div class="rw-stat"><div class="sub">Pagu indikatif tanpa hitung ganda</div><strong>${renjaMoney(total)}</strong><div class="rw-field-note">Agregasi per cabang pada tingkat terdalam yang tersedia.</div></div></div>
     <div class="card"><div class="row"><div><h2>Validasi data Renja</h2><div class="sub">Periksa hubungan, tahun, kelengkapan, serta potensi selisih subtotal sebelum ekspor.</div></div><div class="rw-actions"><span class="pill ${errorCount?'s-Tertunda':'s-Selesai'}">${errorCount} kritis</span><span class="pill ${warnCount?'s-Tertunda':'s-Selesai'}">${warnCount} peringatan</span></div></div>${issues.length?`<ul>${issues.map(x=>`<li style="margin:6px 0"><b>${x.level==='error'?'Kritis':'Peringatan'}:</b> ${esc(x.text)}</li>`).join('')}</ul>`:'<div class="rw-ok" style="margin-top:10px">Tidak ditemukan masalah relasi atau selisih subtotal dari pemeriksaan dasar. Kelengkapan dokumen resmi tetap harus diperiksa.</div>'}</div>
@@ -1688,19 +1739,22 @@ function renderRenjaWorkspace(tab=RENJA_WORKSPACE_TAB,targetSelector=null){
   if(!RENJA_WORKSPACE_ID||!docs.some(x=>String(x.id)===String(RENJA_WORKSPACE_ID)))RENJA_WORKSPACE_ID=docs[0]?.id||'';
   const doc=docs.find(x=>String(x.id)===String(RENJA_WORKSPACE_ID));
   const p=doc?renjaForDoc('program',doc.id):[],k=doc?renjaForDoc('kegiatan',doc.id):[],sk=doc?renjaForDoc('subkegiatan',doc.id):[];
-  const leaves=doc?renjaBudgetLeaves(doc):[],total=leaves.reduce((a,x)=>a+Math.max(0,Number(x.row.pagu)||0),0);
-  host.innerHTML=`<div class="rw-shell"><div class="row"><div><div class="domain-kicker">Single Input · Multiple Output</div><h1>Workspace Renja</h1><div class="sub">Satu ruang kerja untuk dokumen tahunan, struktur Program → Kegiatan → Subkegiatan, validasi, dan keluaran T-C.33.</div></div><div class="actions noprint">${canWrite('renja')?'<button type="button" class="btn-p" id="rwAddDoc">+ Renja</button>':''}</div></div>
+  const leaves=doc?renjaBudgetLeaves(doc):[],total=doc?renjaComputedDocumentPagu(doc):0;
+  host.innerHTML=`<div class="rw-shell"><div class="row"><div><div class="domain-kicker">Single Input · Multiple Output</div><h1>Workspace Renja</h1><div class="sub">Satu ruang kerja untuk dokumen tahunan, struktur Program → Kegiatan → Subkegiatan, validasi, dan keluaran T-C.33.</div></div><div class="actions noprint">${canWrite('renja')?'<button type="button" class="btn-p" id="rwAddDoc">+ Renja</button>':''}${doc&&canDeleteRecord('renja')?'<button type="button" class="btn-d" id="rwDeleteDoc" title="Hanya dapat menghapus dokumen Renja yang tidak memiliki Program, Kegiatan, atau Subkegiatan terkait.">Hapus Renja terpilih</button>':''}</div></div>
     <div class="card"><div class="toolbar"><label class="grow" style="min-width:260px;flex:1">Dokumen Renja<select id="rwDoc" style="width:100%;margin-top:5px">${docs.map(d=>`<option value="${esc(d.id)}" ${String(d.id)===String(RENJA_WORKSPACE_ID)?'selected':''}>${esc(d.kode||'—')} · ${esc(d.nama||'Tanpa nama')} (${esc(d.tahun||'—')})</option>`).join('')||'<option value="">Belum ada dokumen Renja</option>'}</select></label>${doc?`<div><div class="hint">Status</div><b>${esc(doc.status||'—')}</b></div><div><div class="hint">Tahun</div><b>${esc(doc.tahun||'—')}</b></div><div><div class="hint">Perangkat Daerah</div><b>${esc(doc.perangkatDaerah||'—')}</b></div>`:''}</div>
     ${doc?`<div class="rw-summary" style="margin-top:12px"><div class="rw-stat"><div class="sub">Program</div><strong>${p.length}</strong></div><div class="rw-stat"><div class="sub">Kegiatan</div><strong>${k.length}</strong></div><div class="rw-stat"><div class="sub">Subkegiatan</div><strong>${sk.length}</strong></div><div class="rw-stat"><div class="sub">Pagu rincian</div><strong>${renjaMoney(total)}</strong><div class="rw-field-note">Tingkat terdalam yang tersedia per cabang.</div></div></div>`:'<div class="empty">Belum ada dokumen Renja. Klik + Renja untuk membuat dokumen pertama.</div>'}</div>
     <div class="${CLOUD?'rw-ok':'rw-warning'}">${CLOUD?'Koneksi cloud aktif pada sesi ini. Penyimpanan tetap bergantung pada izin akun, skema Supabase, dan validasi database.':'Mode lokal: perubahan hanya berada di memori sesi browser dan tidak akan bertahan setelah halaman dimuat ulang. Untuk menguji persistensi, masuk ke Supabase melalui aplikasi.'}</div><nav class="kl-tabs noprint" aria-label="Bagian Workspace Renja">${RENJA_WORKSPACE_TABS.map(([id,label])=>`<button type="button" class="${tab===id?'on':''}" data-rw-tab="${id}" aria-pressed="${tab===id}">${label}</button>`).join('')}</nav><div id="renjaWorkspacePanel"></div></div>`;
   const sel=host.querySelector('#rwDoc');if(sel)sel.onchange=()=>{RENJA_WORKSPACE_ID=sel.value;renderRenjaWorkspace(RENJA_WORKSPACE_TAB,targetSelector)};
   const addDoc=host.querySelector('#rwAddDoc');if(addDoc)addDoc.onclick=()=>openRenjaEditor('renja',null,{},'identitas');
+  const deleteDoc=host.querySelector('#rwDeleteDoc');if(deleteDoc)deleteDoc.onclick=()=>deleteRenjaDocument(RENJA_WORKSPACE_ID,targetSelector);
   host.querySelectorAll('[data-rw-tab]').forEach(b=>b.onclick=()=>renjaSetTab(b.dataset.rwTab,targetSelector));
   const panel=host.querySelector('#renjaWorkspacePanel');if(!panel)return;
   if(!doc){panel.innerHTML='<div class="card empty">Buat dokumen Renja terlebih dahulu sebelum menambah rincian.</div>';return;}
   if(tab==='identitas'){
-    const ref=dbAll('renstra').find(x=>String(x.id)===String(doc.renstraRef));
-    panel.innerHTML=`<div class="card"><div class="row"><div><h2>${esc(doc.nama||'Renja')}</h2><div class="sub">${esc(doc.kode||'—')} · Tahun ${esc(doc.tahun||'—')} · ${esc(doc.perangkatDaerah||'—')}</div></div>${canWrite('renja')?'<button type="button" class="btn-p" id="rwEditDoc">Ubah identitas</button>':''}</div><div class="grid grid-3" style="margin-top:12px"><div><small>Sasaran Renstra Acuan</small><p>${esc(ref?.nama||'Belum ditautkan')}</p></div><div><small>Indikator Kinerja Utama Renja</small><p>${esc(doc.indikator||'—')}</p><small>Target: ${esc(doc.target||'—')}</small></div><div><small>Lokasi / kelompok sasaran</small><p>${esc(doc.lokasi||'—')} / ${esc(doc.kelompokSasaran||'—')}</p><small>Pagu dokumen: ${renjaMoney(doc.pagu)}</small></div></div><div class="rw-ok" style="margin-top:12px">Mulai dengan menambahkan Program. Dari setiap Program Anda dapat menambah Kegiatan, lalu Subkegiatan dari Kegiatan yang dipilih. Dokumen induk ini tidak disalin ke baris rincian.</div><div class="rw-actions noprint" style="margin-top:12px">${canWrite('program')?'<button type="button" class="btn-p" id="rwStartProgram">+ Tambah Program</button>':''}<button type="button" data-rw-goto="keluaran">Buka Rekap & T-C.33</button></div></div>`;
+    const sasaranRenstra=renjaSasaranRenstra(doc),targetYear=Number(doc.tahun),targetKey=`t${targetYear}`;
+    const targetSupported=Number.isInteger(targetYear)&&targetYear>=2025&&targetYear<=2030;
+    const sasaranHtml=sasaranRenstra.map(r=>`<tr><td>${esc(r.kode||'—')}</td><td><b>${esc(r.nama||'—')}</b>${r.induk?`<div class="rw-field-note">Tujuan: ${esc(renjaParentName('renstra',r.induk))}</div>`:''}</td><td>${esc(r.indikator||'—')}</td><td>${esc(targetSupported?(r[targetKey]||'—'):'Target tahun tidak tersedia')}</td></tr>`).join('');
+    panel.innerHTML=`<div class="card"><div class="row"><div><h2>${esc(doc.nama||'Renja')}</h2><div class="sub">${esc(doc.kode||'—')} · Tahun ${esc(doc.tahun||'—')} · ${esc(doc.perangkatDaerah||'—')}</div></div>${canWrite('renja')?'<button type="button" class="btn-p" id="rwEditDoc">Ubah identitas</button>':''}</div><div class="grid grid-3" style="margin-top:12px"><div><small>Jumlah Sasaran Renstra Acuan</small><p>${sasaranRenstra.length} sasaran (otomatis)</p></div><div><small>Indikator Kinerja Utama Renja</small><p>Diturunkan otomatis dari master Renstra untuk tahun ${esc(doc.tahun||'—')}.</p></div><div><small>Lokasi / kelompok sasaran</small><p>${esc(doc.lokasi||'—')} / ${esc(doc.kelompokSasaran||'—')}</p><small>Pagu Renja (Σ Program): ${renjaMoney(renjaComputedDocumentPagu(doc))}</small></div></div><div class="card" style="margin-top:12px"><h3>Sasaran Renstra, Indikator, dan Target Tahun ${esc(doc.tahun||'—')}</h3><div class="sub">Semua baris Renstra dengan Jenis = Sasaran menjadi acuan. Indikator diturunkan dari kolom Indikator Renstra dan target diambil dari ${esc(targetSupported?targetKey:'kolom target tahun yang sesuai')} berdasarkan tahun dokumen, tanpa memilih satu sasaran secara manual.</div><div class="rw-table" style="margin-top:8px"><table><thead><tr><th>Kode Sasaran</th><th>Sasaran Renstra</th><th>Indikator Kinerja (sumber Renstra)</th><th>Target ${esc(doc.tahun||'—')}</th></tr></thead><tbody>${sasaranHtml||'<tr><td colspan="4" class="empty">Belum ada Sasaran Renstra. Tambahkan baris Jenis = Sasaran di master Renstra terlebih dahulu.</td></tr>'}</tbody></table></div><div class="rw-field-note" style="margin-top:8px">Target yang kosong tetap ditandai untuk diperbaiki pada sumber Renstra; ARKA tidak membuat target pengganti atau menebak nilainya.</div></div><div class="rw-ok" style="margin-top:12px">Mulai dengan menambahkan Program. Pagu setiap Kegiatan dihitung dari Subkegiatan; pagu Program dijumlahkan dari Kegiatan; pagu Renja dijumlahkan dari Program. Nilai turunan tidak diinput ulang.</div><div class="rw-actions noprint" style="margin-top:12px">${canWrite('program')?'<button type="button" class="btn-p" id="rwStartProgram">+ Tambah Program</button>':''}<button type="button" data-rw-goto="keluaran">Buka Rekap & T-C.33</button></div></div>`;
     const edit=panel.querySelector('#rwEditDoc');if(edit)edit.onclick=()=>openRenjaEditor('renja',doc.id,{},'identitas');
     const start=panel.querySelector('#rwStartProgram');if(start)start.onclick=()=>openRenjaEditor('program',null,{renjaRef:doc.id,tahun:Number(doc.tahun),status:'Draft'},'program');
     panel.querySelectorAll('[data-rw-goto]').forEach(b=>b.onclick=()=>renjaSetTab(b.dataset.rwGoto,targetSelector));
@@ -1708,8 +1762,57 @@ function renderRenjaWorkspace(tab=RENJA_WORKSPACE_TAB,targetSelector=null){
     panel.innerHTML=renjaRincianTable(tab,doc);renjaInstallActions(panel,tab,doc);
   }else renjaRenderOutput(doc,panel);
 }
+async function deleteRenjaDocument(id,targetSelector=null){
+  if(!canDeleteRecord('renja')){toast('Hanya admin yang boleh menghapus dokumen Renja.');return;}
+  const doc=dbAll('renja').find(r=>String(r.id)===String(id));
+  if(!doc){toast('Dokumen Renja tidak ditemukan.');return;}
+  const counts=renjaDeleteDependencies(doc.id);
+  if(counts.total){
+    alert(`Dokumen Renja "${doc.kode||doc.nama||doc.id}" belum dapat dihapus karena masih mempunyai data terkait:
+- Program: ${counts.program}
+- Kegiatan (termasuk yang referensi dokumennya kosong/tidak cocok tetapi menunjuk Program terkait): ${counts.kegiatan}
+- Subkegiatan (termasuk yang menunjuk Kegiatan terkait): ${counts.subkegiatan}
+
+ARKA tidak akan menghapus rincian secara otomatis. Tinjau dan pindahkan atau hapus rincian melalui proses yang terpisah terlebih dahulu.`);
+    return;
+  }
+  const relation=RelationEngine.canDelete('renja',doc.id);
+  if(!relation.safe){
+    alert(`Dokumen Renja "${doc.kode||doc.nama||doc.id}" masih dirujuk oleh data lain. Penghapusan dibatalkan untuk menjaga integritas relasi.`);
+    return;
+  }
+  const external=await externalReferencesForDelete('renja',doc.id);
+  if(!external.ok){
+    alert(`Dokumen Renja belum dapat dihapus karena rujukan eksternal belum dapat diverifikasi.
+
+Detail: ${external.error}`);
+    return;
+  }
+  if(external.refs.length){
+    alert(`Dokumen Renja masih dirujuk oleh lampiran atau Evidence:
+- ${external.refs.map(r=>`${r.kind}: ${r.label}`).join('\n- ')}
+
+Lepaskan rujukan melalui proses yang sesuai terlebih dahulu.`);
+    return;
+  }
+  if(!confirm(`Hapus dokumen Renja "${doc.kode||doc.nama||doc.id}" tahun ${doc.tahun||'—'}?
+
+Penghapusan hanya untuk dokumen kosong; Program, Kegiatan, dan Subkegiatan tidak akan dihapus otomatis. Tindakan ini tidak dapat dibatalkan.`))return;
+  try{
+    await RecordEngine.delete('renja',doc.id);
+    RENJA_WORKSPACE_ID='';
+    renderRenjaWorkspace(RENJA_WORKSPACE_TAB,targetSelector);
+    toast('Dokumen Renja berhasil dihapus.');
+  }catch(error){
+    toast(`Dokumen Renja tidak terhapus: ${error.message||error}`);
+  }
+}
+
 function printRenjaTC33(){
   const d=dbAll('renja').find(x=>String(x.id)===String(RENJA_WORKSPACE_ID));if(!d){toast('Pilih dokumen Renja terlebih dahulu.');return;}
+  const validation=renjaValidation(d);
+  const blockers=validation.filter(x=>x.level==='error'||x.code==='RENJA_BUDGET_MISMATCH'||x.code==='RENJA_DOCUMENT_BUDGET_MISMATCH');
+  if(blockers.length){toast(`Cetak T-C.33 dibatalkan: ${blockers.length} masalah sumber, hierarki, tahun, atau pagu harus diperbaiki dahulu.`);return;}
   const rows=renjaOutputRows(d),year=Number(d.tahun)||new Date().getFullYear(),nextYear=year+1;
   const w=window.open('','_blank');if(!w){toast('Izinkan pop-up untuk mencetak atau menyimpan PDF.');return;}
   const escPrint=esc;
@@ -2359,8 +2462,14 @@ function validateMembershipEdit(t,id,row,fd){
 }
 function openForm(t,id,preset={}){
   if(PLAN_TABLES[t])return openPlanForm(t,id,preset);
-  const cols=FIELDS[t]||STD;
+  const allCols=FIELDS[t]||STD;
   const row=id?dbAll(t).find(r=>r.id===id):{...(preset||{})};
+  // Nilai turunan tidak boleh diinput manual pada workspace Renja.
+  const cols=allCols.filter(c=>{
+    if(t==='renja'&&['renstraRef','indikator','target','pagu'].includes(c[0]))return false;
+    if(['program','kegiatan'].includes(t)&&c[0]==='pagu'&&String(row.renjaRef||'').trim())return false;
+    return true;
+  });
   const relationHint=t==='anggota'
     ? 'Sumber tunggal keanggotaan. Pilih Fraksi dan Komisi beserta peran masing-masing. Ketua Fraksi dan Ketua Komisi ditetapkan dari peran di sini dan tampil otomatis di modul Fraksi dan Komisi. Satu fraksi atau komisi hanya boleh memiliki satu Ketua.'
     : (t==='fraksi'||t==='komisi')
@@ -2572,6 +2681,7 @@ Perbaiki atau pindahkan relasi secara eksplisit, atau ubah status record induk s
     // Penghapusan record juga melalui Record Engine agar hook, derivasi, metrik,
     // alert dan audit mengikuti jalur yang sama setelah relasi diperiksa/dilepas.
     await RecordEngine.delete(t,id);
+    if(['renja','program','kegiatan','subkegiatan'].includes(t))renjaRecomputeCachedBudgets();
     toast(`${label} berhasil dihapus${refs.length?' dan referensi terkait dikosongkan':''}`);
     const currentRoute=location.hash.slice(1);
     if(currentRoute==='kelembagaan')renderKelembagaan(KELEMBAGAAN_PANEL);
